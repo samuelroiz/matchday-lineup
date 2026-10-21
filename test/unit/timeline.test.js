@@ -189,11 +189,12 @@ test('stats stay hidden on the Serious side; the card grows and shows them on th
 
 test('grown cards still do not touch their neighbours', () => {
   const T = VIDEO_TEMPLATE;
-  for (const [n, compact] of [[3, false], [2, false], [8, true]]) {
+  for (const [n, compact] of [[1, false], [3, false], [2, false], [8, true], [5, true]]) {
     const scale = compact ? T.layout.compactFlipScale : T.layout.flipScale;
     const grown = cardRects(T, n, compact).map((r) => ({
       x: r.x - (r.w * (scale - 1)) / 2, y: r.y - (r.h * (scale - 1)) / 2, w: r.w * scale, h: r.h * scale,
     }));
+    for (const g of grown) assert.ok(g.x >= 0 && g.x + g.w <= T.width && g.y >= 0 && g.y + g.h <= T.height, `${n} cards: grown card leaves the frame`);
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
       const a = grown[i];
       const b = grown[j];

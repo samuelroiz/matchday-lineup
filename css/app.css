@@ -92,7 +92,8 @@ input[type="range"] { padding: 0; accent-color: var(--maroon); }
 .err { color: var(--danger); font-weight: 500; min-height: 0; }
 .err:empty { display: none; }
 .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px 18px; }
-.field-grid.three { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+/* Height, weight, years and caps on one row; height and weight need room for a unit list. */
+.field-grid.stats { grid-template-columns: minmax(170px, 1.6fr) minmax(140px, 1.3fr) minmax(70px, 1fr) minmax(70px, 1fr); }
 .field-row { display: flex; gap: 12px; }
 .field-row .field { flex: 1; }
 .inline-field { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9rem; white-space: nowrap; }
@@ -240,6 +241,7 @@ fieldset .field-grid + .field { margin-top: 14px; }
   .player-grid { grid-template-columns: 1fr; }
   .slot-groups, .slot-group.wide { grid-template-columns: 1fr; }
   .photo-pickers { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field-grid.stats { grid-template-columns: 1fr 1fr; }
   .modal { width: 100vw; max-height: 100vh; border-radius: 0; }
   .canvas-stage { padding: 8px; }
   .canvas-stage canvas { max-height: 70vh; }

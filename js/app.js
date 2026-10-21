@@ -5,7 +5,7 @@ import {
   cmToFtIn, copyMatch, countPicked, findDuplicates, formatFixtureWhen, ftInToCm, isValid,
   kgToLb, lbToKg, matchFileBase, normalizeMatch, normalizePlayer, removePlayerFromMatch,
   toNumberOrNull, validateMatch, validatePlayer, visibleStats, STAT_KEYS, newId,
-  COACH_ROLES, leaderBadge, normalizeCoach, removeCoachFromMatch, setLeader, syncLeaders, validateCoach,
+  COACH_ROLES, compareCoaches, leaderBadge, normalizeCoach, removeCoachFromMatch, setLeader, syncLeaders, validateCoach,
 } from './model.js';
 import { openStore } from './storage.js';
 import { createBackup, describeRestore, restoreBackup } from './backup.js';
@@ -287,7 +287,7 @@ async function openPlayerForm(existing = null) {
 }
 
 function renderCoaches() {
-  const coaches = [...state.coaches].sort(byName);
+  const coaches = [...state.coaches].sort(compareCoaches);
   $('#coach-list').replaceChildren(...coaches.map((c) => el('article', { class: 'player-card coach-card', dataset: { id: c.id } },
     el('div', { class: 'card-photos' }, photoFigure(c.photo, c.crop, 'Photo', c.name)),
     el('div', { class: 'card-info' }, el('h3', {}, c.name), el('p', { class: 'role' }, c.role || 'Coach')),
@@ -510,7 +510,7 @@ function refreshLeaders(m) {
 
 function renderCoachToggles(m) {
   const box = $('#m-coaches');
-  const coaches = [...state.coaches].sort(byName);
+  const coaches = [...state.coaches].sort(compareCoaches);
   box.replaceChildren(...coaches.map((c) => el('label', {},
     el('input', { type: 'checkbox', value: c.id, checked: m.coaches.includes(c.id), dataset: { coach: c.id } }),
     `${c.name}${c.role ? ` · ${c.role}` : ''}`)));
@@ -668,7 +668,7 @@ function bindMatchForm() {
       const id = e.target.dataset.coach;
       m.coaches = e.target.checked ? [...new Set([...m.coaches, id])] : m.coaches.filter((x) => x !== id);
       // Keep the squad's coach order rather than tick order.
-      const order = [...state.coaches].sort(byName).map((c) => c.id);
+      const order = [...state.coaches].sort(compareCoaches).map((c) => c.id);
       m.coaches.sort((a, b) => order.indexOf(a) - order.indexOf(b));
     } else return;
     refreshSelection(m);
@@ -717,7 +717,8 @@ async function photoOf(p, kind) {
   return img ? { img, crop: p.crops[kind] } : null;
 }
 
-const onDuty = (m) => m.coaches.map(coachById).filter(Boolean);
+// Role order (Head coach first) for the team sheet and video, whatever order the match saved.
+const onDuty = (m) => m.coaches.map(coachById).filter(Boolean).sort(compareCoaches);
 
 async function buildRenderData(m) {
   const coaches = [];

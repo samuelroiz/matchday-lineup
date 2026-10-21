@@ -17,7 +17,7 @@ Everything stays in your browser. Players, photos and matches are saved in the b
    - To adjust a crop, **drag the photo** to move it and use the **Zoom** slider (or arrow keys and +/−). **Auto crop** goes back to the face-detected crop. The crop is used everywhere: squad cards, team sheet and video. The full photo is kept, so you can re-crop at any time.
 3. Under **Show in the video**, untick any stat a player would rather keep private (for example weight).
 4. **Photo style** (Squad tab toolbar) sets the look of every photo when it's drawn: **Off**, **Auto** (evens out brightness and colour between photos), or **Club grade** (Auto plus a subtle maroon and gold tone). Stored photos are never changed.
-5. Under **Coaches**, press **+ Add coach** for each member of the coaching team: name, role (Head coach, Forwards coach, … or type your own) and one photo, with the same auto crop and crop editor.
+5. Under **Coaches**, press **+ Add coach** for each member of the coaching team: name, role (Head coach, Forwards coach, … or type your own) and one photo, with the same auto crop and crop editor. Coaches are listed by role (Head coach, Assistant, Forwards, Backs, then the rest, with roles you typed yourself last), then by name, on the Squad tab, the team sheet and in the video.
 6. Press **Back up squad** to save a JSON file of the whole squad, coaches and saved matches, photos included. Keep it somewhere safe. It's your only copy if the browser's data is cleared. **Restore…** loads a backup on any device. It only ever adds: players and matches already on the device are never overwritten.
 
 **Every week**
@@ -26,7 +26,7 @@ Everything stays in your browser. Players, photos and matches are saved in the b
 2. **Team sheet (tab 3):** choose Post or Story, check the preview, press **Download PNG**.
 3. **Video (tab 4):** press **▶ Preview** to watch it in the page, and adjust **Speed** (about 37–60 s) or **Photo change** (flip or crossfade). Then press **Export video**. Recording runs in real time, so a 55 s video takes about 55 s. Keep the tab open. **Cancel** stops it. When it's done, play it back and press **Download video**.
 
-The video runs: intro (logo, SFV vs opponent, date) → front row 1-2-3 → locks 4-5 → back row 6-7-8 → halves 9-10 → centres 12-13 → back three 11-14-15 → bench 16-23 → coaches → full team sheet, held for 3 s. Each player card slides in showing the Serious photo, shirt number, name and position. It then flips to the Fun photo, grows a little, shows the stats the player allows, and slides out with its group. The captain and vice-captain carry a gold **C** / **VC** badge in the video and on the team sheet, and the team sheet lists the coaches under the replacements. Empty shirts are skipped, and so is the coaches group when nobody is ticked.
+The video runs: intro (logo, SFV vs opponent, date; fully drawn from the first frame, so Instagram uses it as the cover) → front row 1-2-3 → locks 4-5 → back row 6-7-8 → halves 9-10 → centres 12-13 → back three 11-14-15 → bench 16-23 → coaches → full team sheet, held for 3 s. Each player card slides in showing the Serious photo, shirt number, name and position. It then flips to the Fun photo, grows by 10%, shows the stats the player allows, and slides out with its group. Bench cards are smaller, so they show only height and weight, in large type. The captain and vice-captain carry a gold **C** / **VC** badge in the video and on the team sheet, and the team sheet lists the coaches under the replacements. Empty shirts are skipped, and so is the coaches group when nobody is ticked. On the team sheet, an empty starting shirt shows as TBC and empty replacement spots are left out.
 
 **MP4 vs WebM:** Safari and recent Chrome/Edge (126+) record MP4, which Instagram accepts. Browsers that can only record WebM (some Firefox versions) produce a `.webm`, which you may need to convert before posting.
 
@@ -62,6 +62,13 @@ The browser suite uses your installed Google Chrome. Puppeteer's own Chrome down
 PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npm test
 ```
 
+**Visual QA** (not part of `npm test`): two scripts drive the real UI in Chrome like a coach would and save screenshots to `qa/` (git-ignored). They use portrait photos named `pexels-*.jpg` from `~/Downloads`, or from the folder in `QA_PHOTOS`.
+
+```sh
+npm run qa           # 23 players, 2 coaches, every tab, a full video export (about 2 min) and frames from it
+npm run qa:6         # 6 players, 1 coach, a part-filled match, video preview only -> qa/six-players/
+```
+
 ## Deploying on GitHub Pages
 
 1. Push this repository to GitHub.
@@ -92,6 +99,7 @@ js/photodraw.js     draws a photo through its crop and the photo style
 vendor/mediapipe/   bundled face detection engine and model
 js/dialog.js        in-page dialogs and toasts (no alert/confirm/prompt)
 scripts/serve.js    tiny static server for local use and tests
+scripts/qa/          visual QA scripts (npm run qa, npm run qa:6)
 test/unit/          Node tests
 test/e2e/           headless Chrome tests
 test/fixtures/      a public-domain portrait for the face detection test

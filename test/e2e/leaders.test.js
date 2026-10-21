@@ -163,6 +163,11 @@ test('the C and VC badges are drawn on the right team sheet cards; coaches liste
   assert.ok(inCard(c[0], 2), 'C on shirt 2');
   assert.equal(vc.length, 1);
   assert.ok(inCard(vc[0], 3), 'VC on shirt 3');
+  // Only #16 is on the bench: empty replacement spots are left out, empty starting shirts keep TBC.
+  const b = L.bench;
+  const inBench = texts.filter((t) => t.x >= b.x && t.x <= b.x + b.w && t.y >= b.y && t.y <= b.y + b.h && t.t !== 'REPLACEMENTS');
+  assert.deepEqual(inBench.map((t) => t.t), ['16', 'D. Fonoti']);
+  assert.ok(texts.some((t) => t.t === 'TBC' && t.y < b.y), 'empty starting shirts still say TBC');
   assert.ok(texts.some((t) => t.t === 'COACHES'));
   assert.ok(texts.some((t) => t.t === 'Dana Whitfield (Head coach)  ·  Ray Nakamura (Forwards coach)'));
 });
@@ -203,6 +208,19 @@ test('video cards: Serious side has no stats, the flip shows them, captain badge
   assert.ok(badge, 'captain badge drawn');
   const r = rects.rects[1]; // shirt 2 is the second front-row card
   assert.ok(badge.x >= r.x && badge.x <= r.x + r.w * rects.photoWidth && badge.y >= r.y && badge.y <= r.y + r.h, 'badge on shirt 2’s photo');
+});
+
+test('the first frame is the intro fully drawn, so it works as the Instagram cover', async () => {
+  const snap = (v) => page.evaluate((v) => {
+    const s = document.querySelector('#video-scrub');
+    s.value = String(v);
+    s.dispatchEvent(new Event('input'));
+    return document.querySelector('#video-canvas').toDataURL();
+  }, v);
+  const first = await snap(0);
+  assert.equal(first, await snap(20), 'frame 0 matches the intro a second in');
+  const texts = await frameAt(0);
+  assert.ok(texts.some((t) => t.t === 'SANTA MONICA'));
 });
 
 test('the video has a coaches group after the bench', async () => {

@@ -125,7 +125,10 @@ function drawCard(ctx, rect, slot, entry, st, photoStyle, badge) {
   });
 }
 
+/** Only picked replacements are listed, packed in shirt order. No replacements, no box. */
 function drawBench(ctx, bench, data, st) {
+  const picked = BENCH_SLOTS.filter((slot) => data.slots[slot]?.player);
+  if (!picked.length) return;
   ctx.save();
   roundRectPath(ctx, bench.x, bench.y, bench.w, bench.h, 14);
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
@@ -141,8 +144,8 @@ function drawBench(ctx, bench, data, st) {
   ctx.font = st.display(30);
   ctx.fillText('REPLACEMENTS', bench.x + 20, bench.y + 30);
 
-  for (const slot of BENCH_SLOTS) {
-    const e = bench.entries[slot];
+  picked.forEach((slot, i) => {
+    const e = bench.entries[BENCH_SLOTS[i]];
     const r = Math.min(20, e.h * 0.36);
     const cy = e.y + e.h / 2;
     ctx.beginPath();
@@ -155,11 +158,10 @@ function drawBench(ctx, bench, data, st) {
     ctx.fillText(String(slot), e.x + r, cy + 1);
     ctx.fillStyle = st.white;
     ctx.textAlign = 'left';
-    const player = data.slots[slot]?.player;
-    const badge = leaderBadge(data.match, player?.id);
-    const label = player ? shortName(player.name) + (badge ? ` (${badge})` : '') : 'TBC';
-    fitText(ctx, label, e.x + r * 2 + 12, cy + 1, e.w - r * 2 - 24, r * 1.25, st.body);
-  }
+    const player = data.slots[slot].player;
+    const badge = leaderBadge(data.match, player.id);
+    fitText(ctx, shortName(player.name) + (badge ? ` (${badge})` : ''), e.x + r * 2 + 12, cy + 1, e.w - r * 2 - 24, r * 1.25, st.body);
+  });
 }
 
 /** "Coaches with SFV" line under the replacements: "COACHES  Jane Doe (Head coach) · ..." */

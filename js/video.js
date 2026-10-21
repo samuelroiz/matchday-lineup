@@ -51,17 +51,15 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
     return sheet;
   };
 
+  // The intro is fully drawn from the first frame (Instagram uses that frame as the cover),
+  // then fades out into the first group.
   function drawIntro(ctx, seg, t) {
-    const u = prog(t, seg.start, seg.end);
     const out = 1 - prog(t, seg.fadeOutStart, seg.end);
     const m = data.match;
-    // Each element fades up in turn: [appear at, fully in] as a share of the intro.
-    const step = (i) => ease.outCubic(prog(u, 0.08 + i * 0.07, 0.22 + i * 0.07)) * out;
 
-    const logoIn = ease.outCubic(prog(u, 0, 0.22));
     ctx.save();
-    ctx.globalAlpha = logoIn * out;
-    drawLogo(ctx, data.logo, W / 2, 600, 200 * (0.7 + 0.3 * logoIn));
+    ctx.globalAlpha = out;
+    drawLogo(ctx, data.logo, W / 2, 600, 200);
     ctx.restore();
 
     ctx.save();
@@ -75,15 +73,13 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
       { text: formatFixtureWhen(m), y: data.opponentLogo ? 1590 : 1420, kind: 'body', size: 50, color: S.white },
       { text: m.venue || '', y: data.opponentLogo ? 1660 : 1490, kind: 'body', size: 40, color: 'rgba(255,255,255,0.8)' },
     ];
-    lines.forEach((ln, i) => {
-      if (!ln.text) return;
-      const a = step(i);
-      ctx.globalAlpha = a;
+    ctx.globalAlpha = out;
+    for (const ln of lines) {
+      if (!ln.text) continue;
       ctx.fillStyle = ln.color;
-      fitText(ctx, ln.text, W / 2, ln.y + (1 - a) * 30, W - 2 * L.side, ln.size, (s) => f(ln.kind, s));
-    });
+      fitText(ctx, ln.text, W / 2, ln.y, W - 2 * L.side, ln.size, (s) => f(ln.kind, s));
+    }
     if (data.opponentLogo) {
-      ctx.globalAlpha = step(4);
       drawLogo(ctx, data.opponentLogo, W / 2, 1430, 85, { label: '' });
     }
     ctx.restore();
@@ -145,13 +141,14 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
     ctx.globalAlpha *= look.statsAlpha;
     const stats = visibleStats(player, data.units);
     if (compact) {
-      ctx.fillStyle = S.cardInk;
-      const line = stats.map((s) => (s.key === 'years' ? (s.value === 'New' ? 'New at SFV' : `${s.value} yrs SFV`) : s.key === 'caps' ? `${s.value} caps` : s.value)).join(' · ');
-      if (line) fitText(ctx, line, ix, y + h * to.statsY, iw, h * 0.07, (s) => f('body', s));
       if (player?.nickname) {
         ctx.fillStyle = S.muted;
         fitText(ctx, `“${player.nickname}”`, ix, y + h * to.nicknameY, iw, h * 0.07, (s) => f('body', s));
       }
+      ctx.fillStyle = S.cardInk;
+      stats.filter((s) => to.stats.includes(s.key)).forEach((s, i) => {
+        fitText(ctx, s.value, ix, y + h * (to.statsY + i * to.statRow), iw, h * to.statSize, (sz) => f('display', sz));
+      });
     } else {
       if (player?.nickname) {
         ctx.fillStyle = S.muted;
@@ -290,8 +287,6 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
 /** Real-time playback in the page. */
 export function createPreviewPlayer(canvas, renderer, timeline, { onTime, onEnd } = {}) {
   const ctx = canvas.getContext('2d');
-  // At 0:00 the intro hasn't faded in yet, so idle previews show the intro fully drawn instead.
-  const posterTime = timeline.segments[0].fadeOutStart ?? 0;
   let raf = 0;
   let startedAt = 0;
   let pos = 0;
@@ -315,7 +310,7 @@ export function createPreviewPlayer(canvas, renderer, timeline, { onTime, onEnd 
     seek(t) {
       pos = Math.max(0, Math.min(timeline.duration, t));
       startedAt = performance.now() - pos * 1000;
-      renderer.draw(ctx, pos === 0 && !raf ? posterTime : pos);
+      renderer.draw(ctx, pos);
       onTime?.(pos);
     },
   };

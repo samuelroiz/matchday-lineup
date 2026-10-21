@@ -291,6 +291,15 @@ export const COACH_ROLES = [
   'Skills coach', 'Strength & conditioning', 'Team manager', 'Physio',
 ];
 
+/** Coaches in COACH_ROLES order (Head coach first), roles typed by hand after those, then by name. */
+export function compareCoaches(a, b) {
+  const rank = (c) => {
+    const i = COACH_ROLES.findIndex((r) => r.toLowerCase() === (c.role || '').trim().toLowerCase());
+    return i < 0 ? COACH_ROLES.length : i;
+  };
+  return rank(a) - rank(b) || a.name.localeCompare(b.name);
+}
+
 export function normalizeCoach(input = {}) {
   const now = new Date().toISOString();
   return {

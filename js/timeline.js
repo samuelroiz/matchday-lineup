@@ -43,8 +43,14 @@ export const VIDEO_TEMPLATE = {
     // Area the cards share, kept inside Instagram's story safe zone.
     cardsTop: 400,
     cardsBottom: 1720,
-    side: 60,
-    gap: 40,             // room for cards to grow on the flip without touching
+    side: 60,            // margin for titles and intro text
+    // One card per row: inset and spaced so a card grown by flipScale stays clear of its
+    // neighbours (gap > card height × growth) and of the frame edges.
+    cardSide: 85,
+    gap: 60,
+    // Two columns (bench, many coaches) grow less, so they sit closer.
+    compactCardSide: 60,
+    compactGap: 40,
     maxCardHeight: 420,
     maxCompactCardHeight: 300, // a full bench's card height; a short bench keeps the same shape
     compactColumns: 2,
@@ -52,7 +58,7 @@ export const VIDEO_TEMPLATE = {
     photoWidth: 0.36,    // share of a card's width taken by the photo (about the 4:5 crop shape)
     compactPhotoWidth: 0.5,
     radius: 28,
-    flipScale: 1.07,     // card size on the Fun side (1 = no growth)
+    flipScale: 1.1,      // card size on the Fun side (1 = no growth)
     compactFlipScale: 1.06,
     badge: 0.085,        // captain badge radius, as a share of card height
     compactBadge: 0.1,
@@ -62,7 +68,8 @@ export const VIDEO_TEMPLATE = {
       serious: { numberY: 0.42, nameY: 0.68 },
       fun: { numberY: 0.25, nameY: 0.43, nicknameY: 0.54, statsY: 0.7, statRow: 0.16 },
       compactSerious: { numberY: 0.4, nameY: 0.66 },
-      compactFun: { numberY: 0.26, nameY: 0.46, statsY: 0.64, nicknameY: 0.8 },
+      // Bench cards: height and weight only, one per line, as big as the name so they read on a phone.
+      compactFun: { numberY: 0.26, nameY: 0.46, nicknameY: 0.57, statsY: 0.74, statRow: 0.15, statSize: 0.12, stats: ['height', 'weight'] },
       coach: { roleY: 0.38, nameY: 0.58 },
       numberSize: 0.25,
       nameSize: 0.12,
@@ -219,12 +226,14 @@ export function titleState(segment, t) {
 export function cardRects(template, n, compact = false) {
   const L = template.layout;
   const cols = compact ? L.compactColumns : 1;
+  const side = compact ? L.compactCardSide : L.cardSide;
+  const gap = compact ? L.compactGap : L.gap;
   const rows = Math.ceil(n / cols);
-  const areaW = template.width - L.side * 2;
+  const areaW = template.width - side * 2;
   const areaH = L.cardsBottom - L.cardsTop;
-  const w = (areaW - L.gap * (cols - 1)) / cols;
-  const h = Math.min(compact ? L.maxCompactCardHeight : L.maxCardHeight, (areaH - L.gap * (rows - 1)) / rows);
-  const usedH = rows * h + (rows - 1) * L.gap;
+  const w = (areaW - gap * (cols - 1)) / cols;
+  const h = Math.min(compact ? L.maxCompactCardHeight : L.maxCardHeight, (areaH - gap * (rows - 1)) / rows);
+  const usedH = rows * h + (rows - 1) * gap;
   const top = L.cardsTop + (areaH - usedH) / 2;
   const rects = [];
   for (let i = 0; i < n; i++) {
@@ -232,8 +241,8 @@ export function cardRects(template, n, compact = false) {
     const c = i % cols;
     // Centre a lone card on the last row of a multi-column grid.
     const rowCount = Math.min(cols, n - r * cols);
-    const rowOffset = ((cols - rowCount) * (w + L.gap)) / 2;
-    rects.push({ x: L.side + rowOffset + c * (w + L.gap), y: top + r * (h + L.gap), w, h });
+    const rowOffset = ((cols - rowCount) * (w + gap)) / 2;
+    rects.push({ x: side + rowOffset + c * (w + gap), y: top + r * (h + gap), w, h });
   }
   return rects;
 }

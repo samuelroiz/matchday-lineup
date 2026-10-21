@@ -4,7 +4,7 @@ import {
   ALL_SLOTS, cmToFtIn, copyMatch, findDuplicates, formatFixtureWhen, formatHeight, formatWeight,
   ftInToCm, isValid, isValidDate, kgToLb, lbToKg, matchFileBase, normalizeMatch, normalizePlayer,
   removePlayerFromMatch, shortName, splitName, validateMatch, validatePlayer, visibleStats,
-  leaderBadge, normalizeCoach, removeCoachFromMatch, setLeader, syncLeaders, validateCoach,
+  compareCoaches, leaderBadge, normalizeCoach, removeCoachFromMatch, setLeader, syncLeaders, validateCoach,
 } from '../../js/model.js';
 
 const valid = (overrides = {}) => normalizePlayer({ name: 'Sam Roiz', positions: ['Hooker'], heightCm: 180, weightKg: 100, years: 3, ...overrides });
@@ -160,4 +160,14 @@ test('coaches need a name; role and photo crop are checked', () => {
   const m = normalizeMatch({ coaches: [c.id, 'other'] });
   assert.equal(removeCoachFromMatch(m, c.id), true);
   assert.deepEqual(m.coaches, ['other']);
+});
+
+test('coaches are ordered by role, Head coach first, typed-in roles last, then by name', () => {
+  const c = (name, role) => normalizeCoach({ name, role });
+  const sorted = [
+    c('Zoe Physio', 'Physio'), c('Amy Custom', 'Kit manager'), c('Grant Whitaker', 'Forwards coach'),
+    c('Bea Backs', 'backs coach'), c('Maria Delgado', 'Head coach'), c('Al Assist', 'Assistant coach'),
+    c('Ann Other', 'Forwards coach'), c('Bo Norole', ''),
+  ].sort(compareCoaches).map((x) => x.name);
+  assert.deepEqual(sorted, ['Maria Delgado', 'Al Assist', 'Ann Other', 'Grant Whitaker', 'Bea Backs', 'Zoe Physio', 'Amy Custom', 'Bo Norole']);
 });
