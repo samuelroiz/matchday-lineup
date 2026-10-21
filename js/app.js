@@ -5,6 +5,7 @@ import {
   cmToFtIn, copyMatch, countPicked, findDuplicates, formatFixtureWhen, ftInToCm, isValid,
   kgToLb, lbToKg, matchFileBase, normalizeMatch, normalizePlayer, removePlayerFromMatch,
   toNumberOrNull, validateMatch, validatePlayer, visibleStats, STAT_KEYS, newId,
+  COACH_ROLES, leaderBadge, normalizeCoach, removeCoachFromMatch, setLeader, syncLeaders, validateCoach,
 } from './model.js';
 import { openStore } from './storage.js';
 import { createBackup, describeRestore, restoreBackup } from './backup.js';
@@ -28,6 +29,7 @@ const CLIP_SECONDS = Math.max(0, Number(new URLSearchParams(location.search).get
 const state = {
   store: null,
   players: [],
+  coaches: [],
   matches: [],
   settings: { ...DEFAULT_SETTINGS },
   logo: null,
@@ -72,6 +74,7 @@ async function savePhoto(blob) {
 }
 
 const playerById = (id) => state.players.find((p) => p.id === id) || null;
+const coachById = (id) => state.coaches.find((c) => c.id === id) || null;
 const activeMatch = () => state.matches.find((m) => m.id === state.settings.activeMatchId) || null;
 const byName = (a, b) => a.name.localeCompare(b.name);
 const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -283,6 +286,90 @@ async function openPlayerForm(existing = null) {
   });
 }
 
+function renderCoaches() {
+  const coaches = [...state.coaches].sort(byName);
+  $('#coach-list').replaceChildren(...coaches.map((c) => el('article', { class: 'player-card coach-card', dataset: { id: c.id } },
+    el('div', { class: 'card-photos' }, photoFigure(c.photo, c.crop, 'Photo', c.name)),
+    el('div', { class: 'card-info' }, el('h3', {}, c.name), el('p', { class: 'role' }, c.role || 'Coach')),
+    el('div', { class: 'card-actions' },
+      el('button', { type: 'button', class: 'btn btn-small', onclick: () => openCoachForm(c) }, 'Edit'),
+      el('button', { type: 'button', class: 'btn btn-small btn-danger-ghost', onclick: () => deleteCoach(c) }, 'Delete')))));
+  $('#coaches-empty').hidden = state.coaches.length > 0;
+}
+
+async function openCoachForm(existing = null) {
+  const form = $('#coach-form-tpl').content.firstElementChild.cloneNode(true);
+  form.elements.name.value = existing?.name || '';
+  form.elements.role.value = existing?.role || '';
+  $('datalist', form).id = 'coach-roles-list';
+  form.elements.role.setAttribute('list', 'coach-roles-list');
+  $('datalist', form).replaceChildren(...COACH_ROLES.map((r) => el('option', { value: r })));
+  const img = existing?.photo ? await photoImage(state.store, existing.photo) : null;
+  const picker = createPhotoPicker({
+    label: 'Photo', kind: 'coach',
+    existing: img ? { img, crop: existing.crop } : null,
+    getStyle: () => state.settings.photoStyle,
+  });
+  $('.photo-pickers', form).replaceChildren(picker.element);
+  return openDialog({
+    title: existing ? `Edit ${existing.name}` : 'Add coach',
+    body: form,
+    className: 'modal-wide',
+    actions: [{ label: 'Cancel', value: 'cancel' }, { label: existing ? 'Save changes' : 'Add coach', value: 'save', variant: 'primary' }],
+    beforeClose: async (value) => {
+      if (value !== 'save') return true;
+      const coach = normalizeCoach({ ...(existing || {}), name: form.elements.name.value, role: form.elements.role.value, updatedAt: new Date().toISOString() });
+      const errors = validateCoach(coach);
+      showErrors(form, errors);
+      if (!isValid(errors)) { $('.field.invalid input', form)?.focus(); return false; }
+      try {
+        const r = picker.result();
+        const old = existing?.photo;
+        if (r.blob) {
+          coach.photo = await savePhoto(r.blob);
+          coach.crop = r.crop;
+          if (old) await deletePhoto(old);
+        } else if (r.removed) {
+          coach.photo = null;
+          coach.crop = null;
+          if (old) await deletePhoto(old);
+        } else if (r.crop) {
+          coach.crop = r.crop;
+        }
+        await state.store.put('coaches', coach);
+      } catch (e) {
+        storageError(e);
+        return false;
+      }
+      const i = state.coaches.findIndex((c) => c.id === coach.id);
+      if (i >= 0) state.coaches[i] = coach; else state.coaches.push(coach);
+      renderCoaches();
+      renderMatchEditor();
+      toast(existing ? `Saved ${coach.name}.` : `${coach.name} added to the coaches.`, { type: 'success' });
+      return true;
+    },
+  });
+}
+
+async function deleteCoach(c) {
+  const inMatches = state.matches.filter((m) => m.coaches.includes(c.id));
+  const extra = inMatches.length ? ` They will also be taken off ${inMatches.length} saved match${inMatches.length === 1 ? '' : 'es'}.` : '';
+  if (!(await confirmDialog(`Delete ${c.name} and their photo from this device?${extra}`, { title: 'Delete coach', okLabel: 'Delete', danger: true }))) return;
+  try {
+    for (const m of inMatches) {
+      removeCoachFromMatch(m, c.id);
+      m.updatedAt = new Date().toISOString();
+      await state.store.put('matches', m);
+    }
+    await deletePhoto(c.photo);
+    await state.store.delete('coaches', c.id);
+  } catch (e) { storageError(e); return; }
+  state.coaches = state.coaches.filter((x) => x.id !== c.id);
+  renderCoaches();
+  renderMatchEditor();
+  toast(`${c.name} deleted.`);
+}
+
 async function deletePlayer(p) {
   const inMatches = state.matches.filter((m) => Object.values(m.selection).includes(p.id));
   const extra = inMatches.length ? ` They will also be taken out of ${inMatches.length} saved match${inMatches.length === 1 ? '' : 'es'}.` : '';
@@ -309,7 +396,7 @@ async function backupSquad() {
     const data = await createBackup(state.store);
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     download(blob, `sfv-squad-backup-${new Date().toISOString().slice(0, 10)}.json`);
-    toast(`Backed up ${data.players.length} players and ${Object.keys(data.photos).length} photos.`, { type: 'success' });
+    toast(`Backed up ${data.players.length} players, ${data.coaches.length} coaches and ${Object.keys(data.photos).length} photos.`, { type: 'success' });
   } catch (e) {
     toast(`Backup failed: ${e.message}`, { type: 'error' });
   }
@@ -320,6 +407,7 @@ async function restoreSquad(file) {
     const result = await restoreBackup(state.store, await file.text());
     await loadAll();
     renderSquad();
+    renderCoaches();
     renderMatchList();
     renderMatchEditor();
     toast(describeRestore(result), { type: 'success', timeout: 6000 });
@@ -397,8 +485,36 @@ function refreshSelection(m) {
   warn.hidden = dups.length === 0;
   warn.replaceChildren(...dups.map((d) => el('p', {},
     el('strong', {}, playerById(d.playerId)?.name || 'A player'), ` is picked twice: shirts ${d.slots.join(' and ')}.`)));
+  refreshLeaders(m);
   $('#xv-count').textContent = `${countPicked(m.selection, STARTER_SLOTS)}/15`;
   $('#bench-count').textContent = `${countPicked(m.selection, BENCH_SLOTS)}/8`;
+}
+
+/** Captain / vice-captain lists offer only picked players; "C"/"VC" tags appear on their shirts. */
+function refreshLeaders(m) {
+  syncLeaders(m);
+  const picked = ALL_SLOTS.map((s) => ({ s, p: playerById(m.selection[s]) })).filter((x) => x.p);
+  const seen = new Set();
+  const options = picked.filter(({ p }) => !seen.has(p.id) && seen.add(p.id))
+    .map(({ s, p }) => el('option', { value: p.id }, `#${s} ${p.name}`));
+  for (const sel of $$('select[data-role]')) {
+    sel.replaceChildren(el('option', { value: '' }, picked.length ? '— none —' : '— pick the team first —'), ...options.map((o) => o.cloneNode(true)));
+    sel.value = m[sel.dataset.role] || '';
+  }
+  for (const row of $$('.slot[data-slot]')) {
+    const badge = leaderBadge(m, m.selection[row.dataset.slot]);
+    row.querySelector('.leader-tag')?.remove();
+    if (badge) row.querySelector('.pos').append(el('span', { class: 'leader-tag', title: badge === 'C' ? 'Captain' : 'Vice-captain' }, badge));
+  }
+}
+
+function renderCoachToggles(m) {
+  const box = $('#m-coaches');
+  const coaches = [...state.coaches].sort(byName);
+  box.replaceChildren(...coaches.map((c) => el('label', {},
+    el('input', { type: 'checkbox', value: c.id, checked: m.coaches.includes(c.id), dataset: { coach: c.id } }),
+    `${c.name}${c.role ? ` · ${c.role}` : ''}`)));
+  if (!coaches.length) box.append(el('span', { class: 'muted small' }, 'Add coaches on the Squad tab.'));
 }
 
 function slotRow(slot) {
@@ -425,13 +541,14 @@ function renderMatchEditor() {
   $('#m-logo-remove').hidden = !m.opponentLogo;
   if (m.opponentLogo) photoUrl(m.opponentLogo).then((u) => { logo.src = u || ''; });
 
-  const starterGroups = VIDEO_TEMPLATE.groups.filter((g) => !g.compact);
+  const starterGroups = VIDEO_TEMPLATE.groups.filter((g) => g.slots && g.slots.every((s) => STARTER_SLOTS.includes(s)));
   $('#starters').replaceChildren(...starterGroups.map((g) => el('div', { class: 'slot-group' },
     el('h3', {}, g.title), ...[...g.slots].sort((a, b) => a - b).map(slotRow))));
   $('#bench').replaceChildren(el('div', { class: 'slot-group wide' }, ...BENCH_SLOTS.map(slotRow)));
   if (!state.players.length) {
     $('#starters').prepend(el('p', { class: 'warning' }, 'Your squad is empty. Add players on the Squad tab first.'));
   }
+  renderCoachToggles(m);
   refreshSelection(m);
 }
 
@@ -541,8 +658,19 @@ function bindMatchForm() {
   });
   form.addEventListener('change', (e) => {
     const m = activeMatch();
-    if (!m || !e.target.matches('select[data-slot]')) return;
-    m.selection[e.target.dataset.slot] = e.target.value || null;
+    if (!m) return;
+    if (e.target.matches('select[data-slot]')) {
+      m.selection[e.target.dataset.slot] = e.target.value || null;
+    } else if (e.target.matches('select[data-role]')) {
+      // One captain, one vice-captain, never the same player.
+      setLeader(m, e.target.dataset.role, e.target.value || null);
+    } else if (e.target.matches('input[data-coach]')) {
+      const id = e.target.dataset.coach;
+      m.coaches = e.target.checked ? [...new Set([...m.coaches, id])] : m.coaches.filter((x) => x !== id);
+      // Keep the squad's coach order rather than tick order.
+      const order = [...state.coaches].sort(byName).map((c) => c.id);
+      m.coaches.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    } else return;
     refreshSelection(m);
     scheduleMatchSave(m);
   });
@@ -589,7 +717,14 @@ async function photoOf(p, kind) {
   return img ? { img, crop: p.crops[kind] } : null;
 }
 
+const onDuty = (m) => m.coaches.map(coachById).filter(Boolean);
+
 async function buildRenderData(m) {
+  const coaches = [];
+  for (const c of onDuty(m)) {
+    const img = await photoImage(state.store, c.photo);
+    coaches.push({ coach: c, photo: img ? { img, crop: c.crop } : null });
+  }
   const slots = {};
   for (const s of ALL_SLOTS) {
     const p = playerById(m.selection[s]);
@@ -602,6 +737,8 @@ async function buildRenderData(m) {
     logo: state.logo,
     opponentLogo: await photoImage(state.store, m.opponentLogo),
     slots,
+    coaches,
+    coachById: Object.fromEntries(coaches.map((c) => [c.coach.id, c])),
   };
 }
 
@@ -674,7 +811,7 @@ async function prepareVideo() {
   const data = await buildRenderData(m);
   if (id !== videoBuildId) return;
   const template = videoTemplate();
-  const timeline = buildTimeline(template, { speed: state.settings.speed, selection: m.selection });
+  const timeline = buildTimeline(template, { speed: state.settings.speed, selection: m.selection, coaches: onDuty(m).map((c) => c.id) });
   const renderer = createVideoRenderer(data, timeline, template);
   $('#video-length').textContent = `Length ${fmtTime(timeline.duration)} · ${timeline.segments.filter((s) => s.type === 'group').length} groups`;
   const player = createPreviewPlayer(canvas, renderer, timeline, {
@@ -769,12 +906,14 @@ function bindVideo() {
 // ---------- boot ----------
 
 async function loadAll() {
-  const [players, matches, settings] = await Promise.all([
+  const [players, coaches, matches, settings] = await Promise.all([
     state.store.getAll('players'),
+    state.store.getAll('coaches'),
     state.store.getAll('matches'),
     state.store.get('settings', 'settings'),
   ]);
   state.players = players.map(normalizePlayer);
+  state.coaches = coaches.map(normalizeCoach);
   state.matches = matches.map(normalizeMatch);
   state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
   if (!activeMatch()) state.settings.activeMatchId = sortedMatches()[0]?.id || null;
@@ -804,13 +943,14 @@ async function init() {
   });
 
   $('#add-player').addEventListener('click', () => openPlayerForm());
+  $('#add-coach').addEventListener('click', () => openCoachForm());
   $('#squad-search').addEventListener('input', renderSquad);
   $('#units').value = state.settings.units;
   $('#units').addEventListener('change', async (e) => { state.settings.units = e.target.value; await saveSettings(); renderSquad(); });
   const styleSel = $('#photo-style');
   styleSel.replaceChildren(...PHOTO_STYLES.map((s) => el('option', { value: s.value }, s.label)));
   styleSel.value = state.settings.photoStyle;
-  styleSel.addEventListener('change', async () => { state.settings.photoStyle = styleSel.value; await saveSettings(); renderSquad(); });
+  styleSel.addEventListener('change', async () => { state.settings.photoStyle = styleSel.value; await saveSettings(); renderSquad(); renderCoaches(); });
   $('#backup').addEventListener('click', backupSquad);
   $('#restore').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) restoreSquad(f); });
 
@@ -828,6 +968,7 @@ async function init() {
   });
 
   renderSquad();
+  renderCoaches();
   renderMatchList();
   renderMatchEditor();
   const start = location.hash.slice(1);

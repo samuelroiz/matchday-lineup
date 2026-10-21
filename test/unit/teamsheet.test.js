@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TEAM_SHEET_SIZES, layoutTeamSheet } from '../../js/teamsheet.js';
+import { TEAM_SHEET_SIZES, coachesLine, layoutTeamSheet } from '../../js/teamsheet.js';
 import { BENCH_SLOTS, STARTER_SLOTS } from '../../js/model.js';
 
 test('team sheet sizes match Instagram post and story', () => {
@@ -27,6 +27,13 @@ for (const size of Object.keys(TEAM_SHEET_SIZES)) {
       const e = L.bench.entries[s];
       assert.ok(e.y >= L.bench.y && e.y + e.h <= L.bench.y + L.bench.h + 1e-6);
     }
-    assert.ok(L.footerY > L.bench.y + L.bench.h && L.footerY < L.height);
+    assert.ok(L.coaches.y > L.bench.y + L.bench.h + 20, 'coaches line sits under the replacements');
+    assert.ok(L.footerY > L.coaches.y + 20 && L.footerY < L.height);
   });
 }
+
+test('coaches are listed in one line with their roles', () => {
+  assert.equal(coachesLine([{ coach: { name: 'Dana Whitfield', role: 'Head coach' } }, { coach: { name: 'Ray Nakamura', role: '' } }]),
+    'Dana Whitfield (Head coach)  ·  Ray Nakamura');
+  assert.equal(coachesLine([]), '');
+});

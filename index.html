@@ -55,6 +55,13 @@
         <h2>No players yet</h2>
         <p>Add each player once with a Serious and a Fun photo. Next week you only pick the team.</p>
       </div>
+
+      <div class="section-head">
+        <h2>Coaches</h2>
+        <button type="button" class="btn" id="add-coach">+ Add coach</button>
+      </div>
+      <div id="coach-list" class="player-grid coach-grid"></div>
+      <p id="coaches-empty" class="hint" hidden>No coaches yet. Add the coaching team once, then tick who's on duty for each match.</p>
     </section>
 
     <!-- Match -->
@@ -104,6 +111,16 @@
             <fieldset>
               <legend>Bench <span id="bench-count" class="count"></span></legend>
               <div id="bench" class="slot-groups"></div>
+            </fieldset>
+            <fieldset>
+              <legend>Captain and coaches</legend>
+              <div class="field-grid">
+                <label class="field">Captain <select id="m-captain" data-role="captain"></select><small class="err" data-for="captain"></small></label>
+                <label class="field">Vice-captain <span class="opt">optional</span><select id="m-vice" data-role="viceCaptain"></select><small class="err" data-for="viceCaptain"></small></label>
+              </div>
+              <div class="field">Coaches on duty
+                <div id="m-coaches" class="toggles coach-toggles"></div>
+              </div>
             </fieldset>
           </form>
         </div>
@@ -162,6 +179,18 @@
       </div>
     </section>
   </main>
+
+  <template id="coach-form-tpl">
+    <form class="player-form coach-form" novalidate>
+      <div class="field-grid">
+        <label class="field">Name <input name="name" maxlength="61" required autocomplete="off"><small class="err" data-for="name"></small></label>
+        <label class="field">Role <input name="role" maxlength="41" list="coach-roles" autocomplete="off" placeholder="e.g. Head coach"><small class="err" data-for="role"></small></label>
+      </div>
+      <datalist id="coach-roles"></datalist>
+      <div class="photo-pickers single"></div>
+      <small class="err" data-for="photo"></small>
+    </form>
+  </template>
 
   <template id="player-form-tpl">
     <form class="player-form" novalidate>

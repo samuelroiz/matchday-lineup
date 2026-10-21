@@ -33,7 +33,7 @@ export const STAT_KEYS = ['height', 'weight', 'years', 'caps'];
 export const STAT_LABELS = { height: 'Height', weight: 'Weight', years: 'Years at SFV', caps: 'Caps' };
 
 export const LIMITS = {
-  name: 60, nickname: 30, opponent: 60, venue: 80, competition: 60,
+  name: 60, nickname: 30, opponent: 60, venue: 80, competition: 60, role: 40,
   heightCm: [120, 230], weightKg: [40, 200], years: [0, 60], caps: [0, 1000],
 };
 
@@ -214,6 +214,9 @@ export function normalizeMatch(input = {}) {
     competition: cleanText(input.competition, LIMITS.competition),
     opponentLogo: input.opponentLogo || null,
     selection,
+    captain: input.captain || null,
+    viceCaptain: input.viceCaptain || null,
+    coaches: Array.isArray(input.coaches) ? [...new Set(input.coaches.filter(Boolean).map(String))] : [],
     createdAt: input.createdAt || now,
     updatedAt: input.updatedAt || now,
   };
@@ -242,7 +245,81 @@ export function validateMatch(m) {
   for (const key of Object.keys(sel)) {
     if (!ALL_SLOTS.includes(Number(key))) errors.selection = `Shirt ${key} is not a valid shirt number.`;
   }
+  const picked = new Set(Object.values(sel).filter(Boolean));
+  if (m.captain && !picked.has(m.captain)) errors.captain = 'The captain must be in the team.';
+  if (m.viceCaptain && !picked.has(m.viceCaptain)) errors.viceCaptain = 'The vice-captain must be in the team.';
+  if (m.captain && m.captain === m.viceCaptain) errors.viceCaptain = 'Captain and vice-captain must be different players.';
   return errors;
+}
+
+// ---------- Captain / vice-captain ----------
+
+/**
+ * Make playerId the match's 'captain' or 'viceCaptain' (null clears it). A match has one of
+ * each, so this replaces whoever had the role, and a player can't hold both.
+ */
+export function setLeader(m, role, playerId) {
+  if (role !== 'captain' && role !== 'viceCaptain') throw new Error(`Unknown role: ${role}`);
+  const other = role === 'captain' ? 'viceCaptain' : 'captain';
+  m[role] = playerId || null;
+  if (playerId && m[other] === playerId) m[other] = null;
+  return m;
+}
+
+/** Drop captain / vice-captain who are no longer picked. Returns true if anything changed. */
+export function syncLeaders(m) {
+  const picked = new Set(Object.values(m.selection).filter(Boolean));
+  let changed = false;
+  for (const role of ['captain', 'viceCaptain']) {
+    if (m[role] && !picked.has(m[role])) { m[role] = null; changed = true; }
+  }
+  return changed;
+}
+
+/** 'C', 'VC' or null for a player in this match. */
+export function leaderBadge(m, playerId) {
+  if (!playerId) return null;
+  if (m.captain === playerId) return 'C';
+  if (m.viceCaptain === playerId) return 'VC';
+  return null;
+}
+
+// ---------- Coaches ----------
+
+export const COACH_ROLES = [
+  'Head coach', 'Assistant coach', 'Forwards coach', 'Backs coach', 'Defence coach',
+  'Skills coach', 'Strength & conditioning', 'Team manager', 'Physio',
+];
+
+export function normalizeCoach(input = {}) {
+  const now = new Date().toISOString();
+  return {
+    id: input.id || newId(),
+    name: cleanText(input.name, LIMITS.name),
+    role: cleanText(input.role, LIMITS.role),
+    photo: input.photo || null,
+    crop: normalizeCrop(input.crop),
+    createdAt: input.createdAt || now,
+    updatedAt: input.updatedAt || now,
+  };
+}
+
+export function validateCoach(c) {
+  const errors = {};
+  if (!c || typeof c !== 'object') return { name: 'Coach is missing.' };
+  if (!c.name || !String(c.name).trim()) errors.name = 'Name is required.';
+  else if (c.name.length > LIMITS.name) errors.name = `Name must be ${LIMITS.name} characters or fewer.`;
+  if (c.role && c.role.length > LIMITS.role) errors.role = `Role must be ${LIMITS.role} characters or fewer.`;
+  const msg = validateCrop(c.crop);
+  if (msg) errors.photo = msg;
+  return errors;
+}
+
+/** Take a deleted coach off a match. Returns true if anything changed. */
+export function removeCoachFromMatch(m, coachId) {
+  const before = m.coaches.length;
+  m.coaches = m.coaches.filter((id) => id !== coachId);
+  return m.coaches.length !== before;
 }
 
 /** Players picked in more than one shirt: [{ playerId, slots: [3, 17] }] */
@@ -265,6 +342,9 @@ export function countPicked(selection = {}, slots = ALL_SLOTS) {
 export function copyMatch(m) {
   return normalizeMatch({
     selection: { ...m.selection },
+    captain: m.captain,
+    viceCaptain: m.viceCaptain,
+    coaches: [...(m.coaches || [])],
     competition: m.competition,
     kickoff: m.kickoff,
     venue: m.venue,
@@ -277,6 +357,7 @@ export function removePlayerFromMatch(m, playerId) {
   for (const s of ALL_SLOTS) {
     if (m.selection[s] === playerId) { m.selection[s] = null; changed = true; }
   }
+  if (syncLeaders(m)) changed = true;
   return changed;
 }
 

@@ -17,15 +17,16 @@ Everything stays in your browser. Players, photos and matches are saved in the b
    - To adjust a crop, **drag the photo** to move it and use the **Zoom** slider (or arrow keys and +/−). **Auto crop** goes back to the face-detected crop. The crop is used everywhere: squad cards, team sheet and video. The full photo is kept, so you can re-crop at any time.
 3. Under **Show in the video**, untick any stat a player would rather keep private (for example weight).
 4. **Photo style** (Squad tab toolbar) sets the look of every photo when it's drawn: **Off**, **Auto** (evens out brightness and colour between photos), or **Club grade** (Auto plus a subtle maroon and gold tone). Stored photos are never changed.
-5. Press **Back up squad** to save a JSON file of the whole squad, photos included. Keep it somewhere safe. It's your only copy if the browser's data is cleared. **Restore…** loads a backup on any device. It only ever adds: players and matches already on the device are never overwritten.
+5. Under **Coaches**, press **+ Add coach** for each member of the coaching team: name, role (Head coach, Forwards coach, … or type your own) and one photo, with the same auto crop and crop editor.
+6. Press **Back up squad** to save a JSON file of the whole squad, coaches and saved matches, photos included. Keep it somewhere safe. It's your only copy if the browser's data is cleared. **Restore…** loads a backup on any device. It only ever adds: players and matches already on the device are never overwritten.
 
 **Every week**
 
-1. **Match (tab 2):** pick last week's match and press **Copy for next match**. The selection comes across. Set the opponent, date, kick-off (shown on the team sheet next to the date) and venue, and optionally upload the opponent's logo. Change any shirts that differ. The picker lists players who play that position first. If someone is picked twice, a warning shows which shirts. Changes save automatically.
+1. **Match (tab 2):** pick last week's match and press **Copy for next match**. The selection comes across. Set the opponent, date, kick-off (shown on the team sheet next to the date) and venue, and optionally upload the opponent's logo. Change any shirts that differ. The picker lists players who play that position first. If someone is picked twice, a warning shows which shirts. Under **Captain and coaches**, choose the **Captain** and optionally a **Vice-captain** (one of each, never the same player), and tick the **coaches on duty**. Changes save automatically.
 2. **Team sheet (tab 3):** choose Post or Story, check the preview, press **Download PNG**.
 3. **Video (tab 4):** press **▶ Preview** to watch it in the page, and adjust **Speed** (about 37–60 s) or **Photo change** (flip or crossfade). Then press **Export video**. Recording runs in real time, so a 55 s video takes about 55 s. Keep the tab open. **Cancel** stops it. When it's done, play it back and press **Download video**.
 
-The video runs: intro (logo, SFV vs opponent, date) → front row 1-2-3 → locks 4-5 → back row 6-7-8 → halves 9-10 → centres 12-13 → back three 11-14-15 → bench 16-23 → full team sheet, held for 3 s. Empty shirts are skipped.
+The video runs: intro (logo, SFV vs opponent, date) → front row 1-2-3 → locks 4-5 → back row 6-7-8 → halves 9-10 → centres 12-13 → back three 11-14-15 → bench 16-23 → coaches → full team sheet, held for 3 s. Each player card slides in showing the Serious photo, shirt number, name and position. It then flips to the Fun photo, grows a little, shows the stats the player allows, and slides out with its group. The captain and vice-captain carry a gold **C** / **VC** badge in the video and on the team sheet, and the team sheet lists the coaches under the replacements. Empty shirts are skipped, and so is the coaches group when nobody is ticked.
 
 **MP4 vs WebM:** Safari and recent Chrome/Edge (126+) record MP4, which Instagram accepts. Browsers that can only record WebM (some Firefox versions) produce a `.webm`, which you may need to convert before posting.
 
@@ -52,8 +53,8 @@ npm install          # puppeteer, a dev-only dependency; it uses your installed 
 npm test             # unit tests, then the headless Chrome suite
 ```
 
-- `npm run test:unit`: Node tests for data validation, unit conversion, backup/restore (against an in-memory store), the video timeline and the team sheet layout.
-- `npm run test:e2e`: drives the real app in headless Chrome. It adds players with photos, picks a match (including the picked-twice warning), copies it, exports post and story PNGs and checks their pixel size, previews the video, cancels an export, then renders a short video and checks its type and that it isn't empty.
+- `npm run test:unit`: Node tests for data validation (players, coaches, captain rules, crops), unit conversion, backup/restore (against an in-memory store), photo styles, the video timeline and the team sheet layout.
+- `npm run test:e2e`: drives the real app in headless Chrome. It adds players with photos, picks a match (including the picked-twice warning), copies it, exports post and story PNGs and checks their pixel size, previews the video, cancels an export, then renders a short video and checks its type and that it isn't empty. `photos.test.js` covers face auto crop, the crop editor, photo styles, kick-off and long names. `leaders.test.js` covers coaches, captain badges, the card flip, and backup/restore through the real buttons.
 
 The browser suite uses your installed Google Chrome. Puppeteer's own Chrome download is turned off in `.puppeteerrc.cjs`. On macOS the default path is used automatically. Elsewhere, point to Chrome:
 
@@ -96,4 +97,4 @@ test/e2e/           headless Chrome tests
 test/fixtures/      a public-domain portrait for the face detection test
 ```
 
-**Restyling the video:** edit `VIDEO_TEMPLATE` in `js/timeline.js`. The order and grouping of shirts, every timing, card layout, colours and fonts are all set there. The renderer only asks the timeline what is on screen at time *t*, so a restyle doesn't mean rewriting the animation code. Team sheet sizes and spacing are set in `TEAM_SHEET_SIZES` in `js/teamsheet.js`.
+**Restyling the video:** edit `VIDEO_TEMPLATE` in `js/timeline.js`. The order and grouping of shirts, the coaches group, every timing, card layout (including how much a card grows on the flip and where text sits on each side), colours and fonts are all set there. The renderer only asks the timeline what is on screen at time *t*, so a restyle doesn't mean rewriting the animation code. Team sheet sizes and spacing are set in `TEAM_SHEET_SIZES` in `js/teamsheet.js`.

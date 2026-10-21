@@ -137,6 +137,16 @@ legend { font-weight: 800; padding: 0 6px; color: var(--maroon); }
 .off-tag { margin-left: 6px; font-size: 0.7rem; text-decoration: none; display: inline-block; background: var(--line); padding: 0 6px; border-radius: 99px; font-weight: 600; }
 .card-actions { display: flex; gap: 8px; padding: 10px 14px 14px; }
 
+.section-head { display: flex; align-items: center; gap: 14px; margin: 36px 0 14px; padding-top: 20px; border-top: 1px solid var(--line); }
+.section-head h2 { font-size: 1.3rem; color: var(--maroon); }
+.coach-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.coach-card .card-photos { grid-template-columns: 1fr; }
+.coach-card .role { margin: 2px 0 8px; color: var(--muted); font-weight: 600; }
+.coach-toggles label { border: 1px solid var(--line); border-radius: 99px; padding: 6px 12px; }
+.coach-toggles label:has(input:checked) { border-color: var(--maroon); background: var(--maroon-tint); }
+.leader-tag { display: inline-block; margin-left: 6px; background: var(--gold); color: var(--maroon-dark); font-weight: 800; font-size: 0.7rem; padding: 0 6px; border-radius: 99px; }
+.photo-pickers.single { grid-template-columns: 1fr; }
+
 /* Player form */
 .player-form { display: flex; flex-direction: column; gap: 16px; }
 .toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; font-weight: 500; }

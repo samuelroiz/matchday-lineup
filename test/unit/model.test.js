@@ -4,6 +4,7 @@ import {
   ALL_SLOTS, cmToFtIn, copyMatch, findDuplicates, formatFixtureWhen, formatHeight, formatWeight,
   ftInToCm, isValid, isValidDate, kgToLb, lbToKg, matchFileBase, normalizeMatch, normalizePlayer,
   removePlayerFromMatch, shortName, splitName, validateMatch, validatePlayer, visibleStats,
+  leaderBadge, normalizeCoach, removeCoachFromMatch, setLeader, syncLeaders, validateCoach,
 } from '../../js/model.js';
 
 const valid = (overrides = {}) => normalizePlayer({ name: 'Sam Roiz', positions: ['Hooker'], heightCm: 180, weightKg: 100, years: 3, ...overrides });
@@ -113,4 +114,50 @@ test('fixture text and file names', () => {
   const m = normalizeMatch({ opponent: 'Santa Monica RFC', date: '2026-10-24', kickoff: '14:30' });
   assert.equal(formatFixtureWhen(m), 'Sat, Oct 24, 2026 · 2:30 PM');
   assert.equal(matchFileBase(m), 'sfv-vs-santa-monica-rfc-2026-10-24');
+});
+
+test('a match has one captain and one vice-captain, never the same player', () => {
+  const m = normalizeMatch({ opponent: 'X', date: '2026-10-24', selection: { 1: 'a', 2: 'b', 10: 'c' } });
+  setLeader(m, 'captain', 'a');
+  setLeader(m, 'captain', 'c'); // choosing another captain replaces the first
+  assert.equal(m.captain, 'c');
+  assert.equal(leaderBadge(m, 'a'), null);
+  setLeader(m, 'viceCaptain', 'b');
+  assert.deepEqual([leaderBadge(m, 'c'), leaderBadge(m, 'b')], ['C', 'VC']);
+  setLeader(m, 'viceCaptain', 'c'); // the captain can't also be vice: they move across
+  assert.deepEqual([m.captain, m.viceCaptain], [null, 'c']);
+  assert.throws(() => setLeader(m, 'coach', 'a'));
+  assert.deepEqual(validateMatch(m), {});
+});
+
+test('captain rules are validated, and dropped players lose the armband', () => {
+  const m = normalizeMatch({ opponent: 'X', date: '2026-10-24', selection: { 1: 'a', 2: 'b' } });
+  assert.ok(validateMatch({ ...m, captain: 'zz' }).captain, 'captain must be picked');
+  assert.ok(validateMatch({ ...m, captain: 'a', viceCaptain: 'a' }).viceCaptain, 'not both roles');
+  m.captain = 'a';
+  m.viceCaptain = 'b';
+  m.selection[2] = null;
+  assert.equal(syncLeaders(m), true);
+  assert.deepEqual([m.captain, m.viceCaptain], ['a', null]);
+  removePlayerFromMatch(m, 'a');
+  assert.equal(m.captain, null);
+});
+
+test('copying a match keeps captain, vice-captain and coaches', () => {
+  const src = normalizeMatch({ selection: { 1: 'a', 2: 'b' }, captain: 'a', viceCaptain: 'b', coaches: ['c1', 'c1', 'c2'] });
+  assert.deepEqual(src.coaches, ['c1', 'c2'], 'no duplicate coaches');
+  const next = copyMatch(src);
+  assert.deepEqual([next.captain, next.viceCaptain, next.coaches], ['a', 'b', ['c1', 'c2']]);
+});
+
+test('coaches need a name; role and photo crop are checked', () => {
+  const c = normalizeCoach({ name: '  Dana   Whitfield ', role: 'Head coach' });
+  assert.equal(c.name, 'Dana Whitfield');
+  assert.deepEqual(validateCoach(c), {});
+  assert.ok(validateCoach(normalizeCoach({ role: 'Assistant' })).name);
+  assert.ok(validateCoach(normalizeCoach({ name: 'A', role: 'x'.repeat(41) })).role);
+  assert.ok(validateCoach({ ...c, crop: { cx: 0.5, cy: 0.5, zoom: 9, source: 'manual' } }).photo);
+  const m = normalizeMatch({ coaches: [c.id, 'other'] });
+  assert.equal(removeCoachFromMatch(m, c.id), true);
+  assert.deepEqual(m.coaches, ['other']);
 });

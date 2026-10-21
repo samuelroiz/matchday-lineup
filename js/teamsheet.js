@@ -1,8 +1,8 @@
 // Team sheet image: 15 photo cards, the bench, logo and fixture details.
 // layoutTeamSheet is pure (tested in Node); drawTeamSheet paints onto any 2D context.
 
-import { BENCH_SLOTS, STARTER_SLOTS, formatKickoff, formatMatchDate, shortName, splitName } from './model.js';
-import { drawBackground, drawLogo, drawNameLine, drawNumberBadge, drawPlaceholder, fitText, roundRectPath } from './draw.js';
+import { BENCH_SLOTS, STARTER_SLOTS, formatKickoff, formatMatchDate, leaderBadge, shortName, splitName } from './model.js';
+import { drawBackground, drawLeaderBadge, drawLogo, drawNameLine, drawNumberBadge, drawPlaceholder, fitText, roundRectPath } from './draw.js';
 import { drawPhoto } from './photodraw.js';
 
 export const SHEET_STYLE = {
@@ -19,13 +19,13 @@ export const SHEET_STYLE = {
 export const TEAM_SHEET_SIZES = {
   post: {
     label: 'Instagram post', width: 1080, height: 1350,
-    pad: 40, headerTop: 36, headerH: 210, gridTop: 268, gridH: 806, cols: 5, gap: 14,
-    benchTop: 1092, benchH: 196, benchCols: 4, footerY: 1322,
+    pad: 40, headerTop: 30, headerH: 206, gridTop: 256, gridH: 800, cols: 5, gap: 14,
+    benchTop: 1070, benchH: 190, benchCols: 4, coachesY: 1294, footerY: 1334,
   },
   story: {
     label: 'Instagram story', width: 1080, height: 1920,
     pad: 40, headerTop: 230, headerH: 250, gridTop: 500, gridH: 960, cols: 5, gap: 14,
-    benchTop: 1482, benchH: 214, benchCols: 4, footerY: 1736,
+    benchTop: 1482, benchH: 214, benchCols: 4, coachesY: 1740, footerY: 1782,
   },
 };
 
@@ -59,6 +59,7 @@ export function layoutTeamSheet(sizeKey = 'post') {
     header: { x: S.pad, y: S.headerTop, w: innerW, h: S.headerH },
     cards,
     bench,
+    coaches: { x: S.pad, y: S.coachesY, w: innerW },
     footerY: S.footerY,
   };
 }
@@ -91,7 +92,7 @@ function drawHeader(ctx, box, data, st) {
   }
 }
 
-function drawCard(ctx, rect, slot, entry, st, photoStyle) {
+function drawCard(ctx, rect, slot, entry, st, photoStyle, badge) {
   const { x, y, w, h } = rect;
   ctx.save();
   roundRectPath(ctx, x, y, w, h, 12);
@@ -107,6 +108,11 @@ function drawCard(ctx, rect, slot, entry, st, photoStyle) {
   ctx.fillStyle = st.accent;
   ctx.fillRect(x, y + h - 5, w, 5);
   ctx.restore();
+
+  if (badge) {
+    const r = w * 0.13;
+    drawLeaderBadge(ctx, badge, x + w - r - w * 0.05, y + r + w * 0.05, r, { font: st.display });
+  }
 
   // Shirt number on a dark badge, so gold reads on light photos too.
   drawNumberBadge(ctx, slot, x + w * 0.05, y + w * 0.05, h * 0.16, { font: st.display });
@@ -149,13 +155,36 @@ function drawBench(ctx, bench, data, st) {
     ctx.fillText(String(slot), e.x + r, cy + 1);
     ctx.fillStyle = st.white;
     ctx.textAlign = 'left';
-    const name = data.slots[slot]?.player?.name;
-    fitText(ctx, name ? shortName(name) : 'TBC', e.x + r * 2 + 12, cy + 1, e.w - r * 2 - 24, r * 1.25, st.body);
+    const player = data.slots[slot]?.player;
+    const badge = leaderBadge(data.match, player?.id);
+    const label = player ? shortName(player.name) + (badge ? ` (${badge})` : '') : 'TBC';
+    fitText(ctx, label, e.x + r * 2 + 12, cy + 1, e.w - r * 2 - 24, r * 1.25, st.body);
   }
 }
 
+/** "Coaches with SFV" line under the replacements: "COACHES  Jane Doe (Head coach) · ..." */
+export function coachesLine(coaches = []) {
+  return coaches.map(({ coach }) => (coach.role ? `${coach.name} (${coach.role})` : coach.name)).join('  ·  ');
+}
+
+function drawCoachesLine(ctx, box, data, st) {
+  const text = coachesLine(data.coaches);
+  if (!text) return;
+  ctx.save();
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.font = st.display(26);
+  ctx.fillStyle = st.accent;
+  const label = 'COACHES';
+  ctx.fillText(label, box.x + 20, box.y);
+  const lw = ctx.measureText(label).width + 18;
+  ctx.fillStyle = st.white;
+  fitText(ctx, text, box.x + 20 + lw, box.y, box.w - 40 - lw, 24, st.body);
+  ctx.restore();
+}
+
 /**
- * data: { match, logo, opponentLogo, photoStyle, slots: { [shirt]: { player, serious, fun } } }
+ * data: { match, logo, opponentLogo, photoStyle, slots: { [shirt]: { player, serious, fun } }, coaches: [{ coach, photo }] }
  * serious/fun are photos { img, crop } (see photodraw.js); missing ones get placeholders.
  */
 export function drawTeamSheet(ctx, sizeKey, data, st = SHEET_STYLE) {
@@ -163,8 +192,12 @@ export function drawTeamSheet(ctx, sizeKey, data, st = SHEET_STYLE) {
   ctx.save();
   drawBackground(ctx, L.width, L.height, st);
   drawHeader(ctx, L.header, data, st);
-  for (const slot of STARTER_SLOTS) drawCard(ctx, L.cards[slot], slot, data.slots[slot], st, data.photoStyle);
+  for (const slot of STARTER_SLOTS) {
+    const entry = data.slots[slot];
+    drawCard(ctx, L.cards[slot], slot, entry, st, data.photoStyle, leaderBadge(data.match, entry?.player?.id));
+  }
   drawBench(ctx, L.bench, data, st);
+  drawCoachesLine(ctx, L.coaches, data, st);
   ctx.fillStyle = 'rgba(242,183,5,0.85)';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';

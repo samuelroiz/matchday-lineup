@@ -169,3 +169,24 @@ export function drawNumberBadge(ctx, number, x, y, size, { fill = 'rgba(36, 8, 1
   ctx.restore();
   return { w: bw, h: bh };
 }
+
+/** Gold "C" / "VC" captain badge with a dark ring, readable on any photo. (cx, cy) is its centre. */
+export function drawLeaderBadge(ctx, label, cx, cy, r, { fill = '#f2b705', ink = '#3d0e16', ring = 'rgba(36, 8, 14, 0.9)', font }) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+  ctx.shadowBlur = r * 0.4;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = Math.max(2, r * 0.14);
+  ctx.strokeStyle = ring;
+  ctx.stroke();
+  ctx.fillStyle = ink;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = font(r * (label.length > 1 ? 0.95 : 1.25));
+  ctx.fillText(label, cx, cy + r * 0.06);
+  ctx.restore();
+}

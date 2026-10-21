@@ -1,9 +1,9 @@
 // Lineup video: draws any moment of the timeline onto a canvas, plays it back in the page,
 // and records it with MediaRecorder. What appears when, and where, comes from timeline.js.
 
-import { SLOT_NAMES, formatFixtureWhen, splitName, visibleStats } from './model.js';
-import { VIDEO_TEMPLATE, cardRects, cardState, ease, font, segmentAt, titleState } from './timeline.js';
-import { drawBackground, drawLogo, drawNameLine, drawPlaceholder, fitText, roundRectPath } from './draw.js';
+import { SLOT_NAMES, formatFixtureWhen, leaderBadge, splitName, visibleStats } from './model.js';
+import { VIDEO_TEMPLATE, cardLook, cardRects, cardState, ease, font, segmentAt, titleState } from './timeline.js';
+import { drawBackground, drawLeaderBadge, drawLogo, drawNameLine, drawPlaceholder, fitText, roundRectPath } from './draw.js';
 import { drawPhoto } from './photodraw.js';
 import { drawTeamSheet, layoutTeamSheet } from './teamsheet.js';
 
@@ -19,8 +19,9 @@ function makeCanvas(w, h) {
 }
 
 /**
- * data: { match, units, logo, opponentLogo, photoStyle, slots: { [shirt]: { player, serious, fun } } }
- * serious/fun are photos { img, crop }.
+ * data: { match, units, logo, opponentLogo, photoStyle, slots: { [shirt]: { player, serious, fun } },
+ *         coaches: [{ coach, photo }], coachById: { [id]: { coach, photo } } }
+ * serious/fun/photo are photos { img, crop }.
  */
 export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
   const W = template.width;
@@ -113,19 +114,96 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
     ctx.restore();
   }
 
-  function drawCard(ctx, rect, slot, entry, state, compact) {
+  // Text and stats in the panel beside the photo. Serious side: number, position, name.
+  // Fun side (as the card flips): layout slides up and the allowed stats fade in.
+  function drawPlayerInfo(ctx, rect, slot, entry, look, compact, ix, iw) {
+    const { y, h } = rect;
+    const C = L.content;
+    const from = compact ? C.compactSerious : C.serious;
+    const to = compact ? C.compactFun : C.fun;
+    const at = (k) => y + h * (from[k] + (to[k] - from[k]) * look.layout);
+    const player = entry?.player;
+    const { first, last } = splitName(player?.name || '');
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+
+    ctx.fillStyle = S.maroon;
+    ctx.font = f('display', h * C.numberSize);
+    const numY = at('numberY');
+    ctx.fillText(String(slot), ix, numY);
+    const numW = ctx.measureText(String(slot)).width;
+    ctx.fillStyle = S.muted;
+    fitText(ctx, SLOT_NAMES[slot].toUpperCase(), ix + numW + 18, numY - h * 0.02, iw - numW - 18, h * (compact ? 0.06 : 0.055), (s) => f('body', s));
+
+    drawNameLine(ctx, {
+      first, last: (last || 'TBC').toUpperCase(), x: ix, y: at('nameY'), maxWidth: iw, size: h * C.nameSize,
+      align: 'left', firstFont: (s) => f('body', s), lastFont: (s) => f('display', s), firstColor: S.cardInk, lastColor: S.maroon,
+    });
+
+    if (look.statsAlpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha *= look.statsAlpha;
+    const stats = visibleStats(player, data.units);
+    if (compact) {
+      ctx.fillStyle = S.cardInk;
+      const line = stats.map((s) => (s.key === 'years' ? (s.value === 'New' ? 'New at SFV' : `${s.value} yrs SFV`) : s.key === 'caps' ? `${s.value} caps` : s.value)).join(' · ');
+      if (line) fitText(ctx, line, ix, y + h * to.statsY, iw, h * 0.07, (s) => f('body', s));
+      if (player?.nickname) {
+        ctx.fillStyle = S.muted;
+        fitText(ctx, `“${player.nickname}”`, ix, y + h * to.nicknameY, iw, h * 0.07, (s) => f('body', s));
+      }
+    } else {
+      if (player?.nickname) {
+        ctx.fillStyle = S.muted;
+        fitText(ctx, `“${player.nickname}”`, ix, y + h * to.nicknameY, iw, h * 0.06, (s) => f('body', s));
+      }
+      // Stats as a 2-column grid of label over value.
+      const colW = iw / 2;
+      stats.forEach((s, i) => {
+        const cx = ix + (i % 2) * colW;
+        const cy = y + h * (to.statsY + Math.floor(i / 2) * to.statRow);
+        ctx.fillStyle = S.muted;
+        fitText(ctx, s.label.toUpperCase(), cx, cy, colW - 12, h * 0.04, (sz) => f('body', sz));
+        ctx.fillStyle = S.cardInk;
+        fitText(ctx, s.value, cx, cy + h * 0.07, colW - 12, h * 0.07, (sz) => f('display', sz));
+      });
+    }
+    ctx.restore();
+  }
+
+  function drawCoachInfo(ctx, rect, entry, ix, iw) {
+    const { y, h } = rect;
+    const C = L.content.coach;
+    const { first, last } = splitName(entry?.coach?.name || '');
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = S.muted;
+    fitText(ctx, (entry?.coach?.role || 'Coach').toUpperCase(), ix, y + h * C.roleY, iw, h * 0.07, (s) => f('body', s));
+    drawNameLine(ctx, {
+      first, last: (last || 'TBC').toUpperCase(), x: ix, y: y + h * C.nameY, maxWidth: iw, size: h * L.content.nameSize,
+      align: 'left', firstFont: (s) => f('body', s), lastFont: (s) => f('display', s), firstColor: S.cardInk, lastColor: S.maroon,
+    });
+  }
+
+  function drawCard(ctx, rect, card, state, compact) {
     const { x, y, w, h } = rect;
     const dx = (1 - state.enter) * W * 0.9 - state.exit * W * 0.9;
     const alpha = clamp01(state.enter * 1.3) * (1 - state.exit);
     if (alpha <= 0) return;
+    const look = cardLook(template, state, compact);
+    const isCoach = card.kind === 'coach';
+    const entry = isCoach ? data.coachById?.[card.coachId] : data.slots[card.slot];
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.translate(dx, 0);
+    // Slide, then grow around the card's centre on the flip.
+    ctx.translate(dx + x + w / 2, y + h / 2);
+    ctx.scale(look.scale, look.scale);
+    ctx.translate(-(x + w / 2), -(y + h / 2));
 
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,0.35)';
-    ctx.shadowBlur = 30;
-    ctx.shadowOffsetY = 12;
+    ctx.shadowBlur = 30 + 20 * look.layout;
+    ctx.shadowOffsetY = 12 + 8 * look.layout;
     roundRectPath(ctx, x, y, w, h, L.radius);
     ctx.fillStyle = S.card;
     ctx.fill();
@@ -135,58 +213,26 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
     ctx.save();
     roundRectPath(ctx, x, y, w, h, L.radius);
     ctx.clip();
-    drawCardPhoto(ctx, x, y, pw, h, entry, state.flip);
+    if (isCoach) {
+      if (entry?.photo) drawPhoto(ctx, entry.photo, x, y, pw, h, data.photoStyle);
+      else drawPlaceholder(ctx, x, y, pw, h, entry?.coach?.name, S);
+    } else {
+      drawCardPhoto(ctx, x, y, pw, h, entry, state.flip);
+    }
     ctx.fillStyle = S.accent;
     ctx.fillRect(x + pw, y, 8, h);
     ctx.restore();
 
-    const player = entry?.player;
+    const badge = !isCoach && leaderBadge(data.match, entry?.player?.id);
+    if (badge) {
+      const r = h * (compact ? L.compactBadge : L.badge);
+      drawLeaderBadge(ctx, badge, x + pw - r - h * 0.04, y + r + h * 0.04, r, { font: (s) => f('display', s) });
+    }
+
     const ix = x + pw + 8 + (compact ? 22 : 36);
     const iw = x + w - ix - (compact ? 18 : 32);
-    const { first, last } = splitName(player?.name || '');
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-
-    ctx.fillStyle = S.maroon;
-    ctx.font = f('display', h * (compact ? 0.24 : 0.25));
-    const numY = y + h * (compact ? 0.27 : 0.27);
-    ctx.fillText(String(slot), ix, numY);
-    if (!compact) {
-      const numW = ctx.measureText(String(slot)).width;
-      ctx.fillStyle = S.muted;
-      fitText(ctx, SLOT_NAMES[slot].toUpperCase(), ix + numW + 20, numY - h * 0.02, iw - numW - 20, h * 0.055, (s) => f('body', s));
-    }
-
-    drawNameLine(ctx, {
-      first, last: (last || 'TBC').toUpperCase(), x: ix, y: y + h * (compact ? 0.5 : 0.5), maxWidth: iw, size: h * (compact ? 0.12 : 0.12),
-      align: 'left', firstFont: (s) => f('body', s), lastFont: (s) => f('display', s), firstColor: S.cardInk, lastColor: S.maroon,
-    });
-
-    const stats = visibleStats(player, data.units);
-    if (compact) {
-      ctx.fillStyle = S.cardInk;
-      const line = stats.filter((s) => s.key !== 'caps').map((s) => (s.key === 'years' ? (s.value === 'New' ? 'New at SFV' : `${s.value} yrs SFV`) : s.value)).join(' · ');
-      if (line) fitText(ctx, line, ix, y + h * 0.7, iw, h * 0.07, (s) => f('body', s));
-      if (player?.nickname) {
-        ctx.fillStyle = S.muted;
-        fitText(ctx, `“${player.nickname}”`, ix, y + h * 0.84, iw, h * 0.07, (s) => f('body', s));
-      }
-    } else {
-      if (player?.nickname) {
-        ctx.fillStyle = S.muted;
-        fitText(ctx, `“${player.nickname}”`, ix, y + h * 0.63, iw, h * 0.06, (s) => f('body', s));
-      }
-      // Stats as a 2-column grid of label over value.
-      const colW = iw / 2;
-      stats.forEach((s, i) => {
-        const cx = ix + (i % 2) * colW;
-        const cy = y + h * (0.75 + Math.floor(i / 2) * 0.15);
-        ctx.fillStyle = S.muted;
-        fitText(ctx, s.label.toUpperCase(), cx, cy, colW - 12, h * 0.04, (sz) => f('body', sz));
-        ctx.fillStyle = S.cardInk;
-        fitText(ctx, s.value, cx, cy + h * 0.07, colW - 12, h * 0.07, (sz) => f('display', sz));
-      });
-    }
+    if (isCoach) drawCoachInfo(ctx, rect, entry, ix, iw);
+    else drawPlayerInfo(ctx, rect, card.slot, entry, look, compact, ix, iw);
     ctx.restore();
   }
 
@@ -205,10 +251,12 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
     ctx.restore();
 
     const rects = cardRects(template, seg.cards.length, seg.compact);
-    seg.cards.forEach((card, i) => {
-      const st = cardState(card, t);
-      if (st.visible) drawCard(ctx, rects[i], card.slot, data.slots[card.slot], st, seg.compact);
-    });
+    // Cards further into their flip are bigger, so draw them last (on top).
+    seg.cards
+      .map((card, i) => ({ card, rect: rects[i], st: cardState(card, t) }))
+      .filter((c) => c.st.visible)
+      .sort((a, b) => a.st.flip - b.st.flip)
+      .forEach(({ card, rect, st }) => drawCard(ctx, rect, card, st, seg.compact));
   }
 
   function drawSheet(ctx, seg, t) {

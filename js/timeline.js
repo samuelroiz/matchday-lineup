@@ -10,15 +10,16 @@ export const VIDEO_TEMPLATE = {
 
   // Seconds at speed 1. Everything is divided by the speed setting except sheetHold.
   timings: {
-    intro: 3.6,        // logo + fixture card on screen
+    intro: 3.2,        // logo + fixture card on screen
     introOut: 0.5,     // fade out at the end of the intro
     slideIn: 0.7,      // one card sliding in
     stagger: 0.15,     // delay between cards in a group (in, flip and out)
-    holdSerious: 2.0,  // Serious photo on screen once all cards are in
-    flip: 0.6,         // Serious -> Fun transition
-    holdFun: 2.0,      // Fun photo on screen once all cards have flipped
-    slideOut: 0.5,     // one card sliding out
+    holdSerious: 1.5,  // Serious side (photo, number, name, position) once all cards are in
+    flip: 0.6,         // Serious -> Fun: photo turns, card grows, stats appear
+    holdFun: 2.0,      // Fun side with stats, once all cards have flipped
+    slideOut: 0.5,     // one card sliding out (still at its grown size)
     gap: 0.15,         // breath between groups
+    coachHold: 2.2,    // coaches on screen (one photo, no flip)
     sheetIn: 0.8,      // full team sheet fading in
     sheetHold: 3,      // full team sheet held (fixed, not scaled by speed)
   },
@@ -34,6 +35,8 @@ export const VIDEO_TEMPLATE = {
     { key: 'centres', title: 'Centres', slots: [12, 13] },
     { key: 'backthree', title: 'Back Three', slots: [11, 14, 15] },
     { key: 'bench', title: 'Bench', slots: [16, 17, 18, 19, 20, 21, 22, 23], compact: true, stagger: 0.07 },
+    // Coaches on duty for the match; two columns from compactFrom coaches upwards.
+    { key: 'coaches', title: 'Coaches', source: 'coaches', compactFrom: 4, stagger: 0.12 },
   ],
 
   layout: {
@@ -41,13 +44,28 @@ export const VIDEO_TEMPLATE = {
     cardsTop: 400,
     cardsBottom: 1720,
     side: 60,
-    gap: 34,
+    gap: 40,             // room for cards to grow on the flip without touching
     maxCardHeight: 420,
     compactColumns: 2,
     titleY: 250,         // group title baseline
     photoWidth: 0.36,    // share of a card's width taken by the photo (about the 4:5 crop shape)
     compactPhotoWidth: 0.5,
     radius: 28,
+    flipScale: 1.07,     // card size on the Fun side (1 = no growth)
+    compactFlipScale: 1.06,
+    badge: 0.085,        // captain badge radius, as a share of card height
+    compactBadge: 0.1,
+    // Text baselines as a share of card height. Serious side: number, name, position only.
+    // Fun side: everything moves up to make room for the allowed stats.
+    content: {
+      serious: { numberY: 0.42, nameY: 0.68 },
+      fun: { numberY: 0.25, nameY: 0.43, nicknameY: 0.54, statsY: 0.7, statRow: 0.16 },
+      compactSerious: { numberY: 0.4, nameY: 0.66 },
+      compactFun: { numberY: 0.26, nameY: 0.46, statsY: 0.64, nicknameY: 0.8 },
+      coach: { roleY: 0.38, nameY: 0.58 },
+      numberSize: 0.25,
+      nameSize: 0.12,
+    },
   },
 
   style: {
@@ -77,8 +95,9 @@ export const font = (template, kind, size) => template.style[kind].replace('{siz
  * Turn the template into absolute segments.
  * options.selection: { [shirt]: playerId } — when given, empty shirts get no card and
  * groups with nobody picked are skipped.
+ * options.coaches: coach ids on duty, in order. No coaches, no coaches group.
  */
-export function buildTimeline(template = VIDEO_TEMPLATE, { speed = 1, selection = null } = {}) {
+export function buildTimeline(template = VIDEO_TEMPLATE, { speed = 1, selection = null, coaches = [] } = {}) {
   if (!(speed > 0)) throw new Error('speed must be positive');
   const T = template.timings;
   const sc = (x) => x / speed;
@@ -89,6 +108,27 @@ export function buildTimeline(template = VIDEO_TEMPLATE, { speed = 1, selection 
   t = sc(T.intro);
 
   for (const g of template.groups) {
+    if (g.source === 'coaches') {
+      if (!coaches.length) continue;
+      const n = coaches.length;
+      const st = sc(g.stagger ?? T.stagger);
+      const outBase = sc(T.slideIn) + st * (n - 1) + sc(T.coachHold);
+      const cards = coaches.map((id, i) => ({
+        kind: 'coach',
+        coachId: id,
+        index: i,
+        inStart: t + st * i,
+        inEnd: t + st * i + sc(T.slideIn),
+        flipStart: null, // coaches have one photo: no flip
+        flipEnd: null,
+        outStart: t + outBase + st * i,
+        outEnd: t + outBase + st * i + sc(T.slideOut),
+      }));
+      const end = cards[n - 1].outEnd + sc(T.gap);
+      segments.push({ type: 'group', kind: 'coaches', key: g.key, title: g.title, compact: n >= (g.compactFrom ?? Infinity), cards, start: t, end });
+      t = end;
+      continue;
+    }
     const slots = selection ? g.slots.filter((s) => selection[s]) : [...g.slots];
     if (slots.length === 0) continue;
     const n = slots.length;
@@ -98,6 +138,7 @@ export function buildTimeline(template = VIDEO_TEMPLATE, { speed = 1, selection 
     const allFlipped = flipBase + sc(T.flip) + st * (n - 1);
     const outBase = allFlipped + sc(T.holdFun);
     const cards = slots.map((slot, i) => ({
+      kind: 'player',
       slot,
       index: i,
       inStart: t + st * i,
@@ -108,7 +149,7 @@ export function buildTimeline(template = VIDEO_TEMPLATE, { speed = 1, selection 
       outEnd: t + outBase + st * i + sc(T.slideOut),
     }));
     const end = cards[n - 1].outEnd + sc(T.gap);
-    segments.push({ type: 'group', key: g.key, title: g.title, compact: !!g.compact, slots, cards, start: t, end });
+    segments.push({ type: 'group', kind: 'players', key: g.key, title: g.title, compact: !!g.compact, slots, cards, start: t, end });
     t = end;
   }
 
@@ -143,8 +184,24 @@ export function cardState(card, t) {
   return {
     visible: t >= card.inStart && t < card.outEnd,
     enter: ease.outCubic(progress(t, card.inStart, card.inEnd)),
-    flip: ease.inOutCubic(progress(t, card.flipStart, card.flipEnd)),
+    flip: card.flipStart === null ? 0 : ease.inOutCubic(progress(t, card.flipStart, card.flipEnd)),
     exit: ease.inCubic(progress(t, card.outStart, card.outEnd)),
+  };
+}
+
+/**
+ * How a card looks for a given cardState: its scale, how far its text has moved from the
+ * Serious layout to the Fun layout (0-1), and the opacity of the stats (0 until the flip
+ * is half way, when the Fun photo appears).
+ */
+export function cardLook(template, state, compact = false) {
+  const L = template.layout;
+  const grow = (compact ? L.compactFlipScale : L.flipScale) - 1;
+  return {
+    scale: 1 + grow * state.flip,
+    layout: state.flip,
+    statsAlpha: clamp01((state.flip - 0.5) * 2),
+    showFun: state.flip >= 0.5,
   };
 }
 

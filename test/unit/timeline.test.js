@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SPEEDS, VIDEO_TEMPLATE, buildTimeline, cardRects, cardState, segmentAt, titleState } from '../../js/timeline.js';
+import { SPEEDS, VIDEO_TEMPLATE, buildTimeline, cardLook, cardRects, cardState, segmentAt, titleState } from '../../js/timeline.js';
 import { ALL_SLOTS, normalizeMatch } from '../../js/model.js';
 import { pickVideoFormat } from '../../js/video.js';
 
@@ -129,4 +129,64 @@ test('video format prefers MP4 and falls back to WebM', () => {
   const webm = pickVideoFormat((t) => t.startsWith('video/webm'));
   assert.deepEqual([webm.ext, webm.type], ['webm', 'video/webm']);
   assert.equal(pickVideoFormat(() => false), null);
+});
+
+const COACHES = ['c1', 'c2', 'c3'];
+
+test('the coaches group comes after the bench and before the team sheet', () => {
+  const tl = buildTimeline(VIDEO_TEMPLATE, { selection: fullSelection, coaches: COACHES });
+  assert.deepEqual(tl.segments.map((s) => s.key || s.type).slice(-3), ['bench', 'coaches', 'sheet']);
+  const g = tl.segments.find((s) => s.key === 'coaches');
+  assert.deepEqual(g.cards.map((c) => [c.kind, c.coachId]), COACHES.map((id) => ['coach', id]));
+  assert.equal(g.compact, false);
+  assert.equal(buildTimeline(VIDEO_TEMPLATE, { coaches: ['a', 'b', 'c', 'd'] }).segments.find((s) => s.key === 'coaches').compact, true);
+  // No coaches on duty, no coaches group.
+  assert.ok(!buildTimeline(VIDEO_TEMPLATE, { selection: fullSelection }).segments.some((s) => s.key === 'coaches'));
+});
+
+test('with coaches the full video still runs 45-60 seconds at normal speed', () => {
+  for (const coaches of [[], ['c1'], COACHES, ['c1', 'c2', 'c3', 'c4', 'c5']]) {
+    const { duration } = buildTimeline(VIDEO_TEMPLATE, { speed: 1, selection: fullSelection, coaches });
+    assert.ok(duration >= 45 && duration <= 60, `${coaches.length} coaches: ${duration.toFixed(1)} s`);
+  }
+});
+
+test('coach cards never flip', () => {
+  const g = buildTimeline(VIDEO_TEMPLATE, { coaches: COACHES }).segments.find((s) => s.key === 'coaches');
+  const c = g.cards[0];
+  for (const t of [c.inEnd, (c.inEnd + c.outStart) / 2, c.outStart]) {
+    const st = cardState(c, t);
+    assert.equal(st.flip, 0);
+    assert.equal(cardLook(VIDEO_TEMPLATE, st).scale, 1);
+  }
+});
+
+test('stats stay hidden on the Serious side; the card grows and shows them on the flip', () => {
+  const tl = buildTimeline(VIDEO_TEMPLATE, { selection: fullSelection });
+  const c = tl.segments[1].cards[0];
+  const serious = cardLook(VIDEO_TEMPLATE, cardState(c, (c.inEnd + c.flipStart) / 2));
+  assert.deepEqual(serious, { scale: 1, layout: 0, statsAlpha: 0, showFun: false });
+  const early = cardLook(VIDEO_TEMPLATE, cardState(c, c.flipStart + (c.flipEnd - c.flipStart) * 0.3));
+  assert.equal(early.statsAlpha, 0, 'no stats while the Serious side is still turning');
+  assert.ok(early.scale > 1);
+  const fun = cardLook(VIDEO_TEMPLATE, cardState(c, (c.flipEnd + c.outStart) / 2));
+  assert.deepEqual(fun, { scale: VIDEO_TEMPLATE.layout.flipScale, layout: 1, statsAlpha: 1, showFun: true });
+  // Leaves at full size with the group.
+  assert.equal(cardLook(VIDEO_TEMPLATE, cardState(c, c.outStart + 0.1)).scale, VIDEO_TEMPLATE.layout.flipScale);
+  assert.equal(cardLook(VIDEO_TEMPLATE, cardState(c, c.flipEnd), true).scale, VIDEO_TEMPLATE.layout.compactFlipScale);
+});
+
+test('grown cards still do not touch their neighbours', () => {
+  const T = VIDEO_TEMPLATE;
+  for (const [n, compact] of [[3, false], [2, false], [8, true]]) {
+    const scale = compact ? T.layout.compactFlipScale : T.layout.flipScale;
+    const grown = cardRects(T, n, compact).map((r) => ({
+      x: r.x - (r.w * (scale - 1)) / 2, y: r.y - (r.h * (scale - 1)) / 2, w: r.w * scale, h: r.h * scale,
+    }));
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const a = grown[i];
+      const b = grown[j];
+      assert.ok(!(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h), `${n} cards: ${i} and ${j} overlap when grown`);
+    }
+  }
 });

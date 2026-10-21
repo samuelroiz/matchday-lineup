@@ -4,9 +4,9 @@
 
 import { blobToDataUrl, dataUrlToBlob } from './blobs.js';
 
-export const STORE_NAMES = ['players', 'matches', 'photos', 'settings'];
+export const STORE_NAMES = ['players', 'coaches', 'matches', 'photos', 'settings'];
 const DB_NAME = 'matchday-lineup';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // 2: coaches
 const LS_PREFIX = 'matchday-lineup:';
 
 export function createMemoryStore() {
@@ -34,7 +34,10 @@ async function createIdbStore() {
     const db = open.result;
     for (const n of STORE_NAMES) if (!db.objectStoreNames.contains(n)) db.createObjectStore(n, { keyPath: 'id' });
   };
+  open.onblocked = () => console.warn('Matchday Lineup is open in another tab; close it to finish updating storage.');
   const db = await req(open);
+  // Let a newer version of the app in another tab upgrade the database.
+  db.onversionchange = () => db.close();
   const tx = (name, mode) => db.transaction(name, mode).objectStore(name);
   return {
     kind: 'indexeddb',
