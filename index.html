@@ -34,6 +34,10 @@
         <button type="button" class="btn btn-primary" id="add-player">+ Add player</button>
         <input type="search" id="squad-search" placeholder="Search squad" aria-label="Search squad">
         <span class="spacer"></span>
+        <label class="inline-field">Photo style
+          <select id="photo-style" aria-describedby="photo-style-help"></select>
+        </label>
+        <span id="photo-style-help" class="sr-only">Applied to every photo when drawing. Stored photos are never changed.</span>
         <label class="inline-field">Show stats in
           <select id="units">
             <option value="imperial">ft/in · lb</option>
@@ -80,7 +84,7 @@
               <div class="field-grid">
                 <label class="field">Opponent <input name="opponent" id="m-opponent" maxlength="60" required autocomplete="off"><small class="err" data-for="opponent"></small></label>
                 <label class="field">Date <input name="date" id="m-date" type="date" required><small class="err" data-for="date"></small></label>
-                <label class="field">Kick-off <input name="kickoff" id="m-kickoff" type="time"><small class="err" data-for="kickoff"></small></label>
+                <label class="field">Kick-off <select name="kickoff" id="m-kickoff"></select><small class="err" data-for="kickoff"></small></label>
                 <label class="field">Venue <input name="venue" id="m-venue" maxlength="80" autocomplete="off"><small class="err" data-for="venue"></small></label>
                 <label class="field">Competition <input name="competition" id="m-competition" maxlength="60" autocomplete="off" placeholder="e.g. SCRFU D1 League"><small class="err" data-for="competition"></small></label>
                 <div class="field">Opponent logo
@@ -193,20 +197,7 @@
           <label><input type="checkbox" name="show-caps" checked> Caps</label>
         </div>
       </div>
-      <div class="photo-pickers">
-        <div class="photo-pick" data-kind="serious">
-          <span class="photo-label">Serious photo</span>
-          <div class="photo-frame"><img alt="" hidden><span class="photo-empty">No photo</span></div>
-          <label class="btn btn-small file-btn">Choose…<input type="file" accept="image/*" name="photo-serious" hidden></label>
-          <button type="button" class="btn btn-small" data-clear hidden>Remove</button>
-        </div>
-        <div class="photo-pick" data-kind="fun">
-          <span class="photo-label">Fun photo</span>
-          <div class="photo-frame"><img alt="" hidden><span class="photo-empty">No photo</span></div>
-          <label class="btn btn-small file-btn">Choose…<input type="file" accept="image/*" name="photo-fun" hidden></label>
-          <button type="button" class="btn btn-small" data-clear hidden>Remove</button>
-        </div>
-      </div>
+      <div class="photo-pickers"></div>
       <small class="err" data-for="photos"></small>
     </form>
   </template>

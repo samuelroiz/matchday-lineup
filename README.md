@@ -13,18 +13,23 @@ Everything stays in your browser. Players, photos and matches are saved in the b
 
 1. Press **+ Add player**. Enter a name, plus an optional nickname, usual positions, height (ft/in or cm), weight (lb or kg), years at SFV and caps.
 2. Add two photos: **Serious** (used on the team sheet, and first in the video) and **Fun** (the video flips to it). Large photos are shrunk to 1200 px before saving.
+   - Each photo is **auto-cropped**: the app finds the face and frames it so every player's head is the same size and height. If it can't find a face, it starts from the top-centre.
+   - To adjust a crop, **drag the photo** to move it and use the **Zoom** slider (or arrow keys and +/−). **Auto crop** goes back to the face-detected crop. The crop is used everywhere: squad cards, team sheet and video. The full photo is kept, so you can re-crop at any time.
 3. Under **Show in the video**, untick any stat a player would rather keep private (for example weight).
-4. Press **Back up squad** to save a JSON file of the whole squad, photos included. Keep it somewhere safe. It's your only copy if the browser's data is cleared. **Restore…** loads a backup on any device. It only ever adds: players and matches already on the device are never overwritten.
+4. **Photo style** (Squad tab toolbar) sets the look of every photo when it's drawn: **Off**, **Auto** (evens out brightness and colour between photos), or **Club grade** (Auto plus a subtle maroon and gold tone). Stored photos are never changed.
+5. Press **Back up squad** to save a JSON file of the whole squad, photos included. Keep it somewhere safe. It's your only copy if the browser's data is cleared. **Restore…** loads a backup on any device. It only ever adds: players and matches already on the device are never overwritten.
 
 **Every week**
 
-1. **Match (tab 2):** pick last week's match and press **Copy for next match**. The selection comes across. Set the opponent, date, kick-off and venue, and optionally upload the opponent's logo. Change any shirts that differ. The picker lists players who play that position first. If someone is picked twice, a warning shows which shirts. Changes save automatically.
+1. **Match (tab 2):** pick last week's match and press **Copy for next match**. The selection comes across. Set the opponent, date, kick-off (shown on the team sheet next to the date) and venue, and optionally upload the opponent's logo. Change any shirts that differ. The picker lists players who play that position first. If someone is picked twice, a warning shows which shirts. Changes save automatically.
 2. **Team sheet (tab 3):** choose Post or Story, check the preview, press **Download PNG**.
 3. **Video (tab 4):** press **▶ Preview** to watch it in the page, and adjust **Speed** (about 37–60 s) or **Photo change** (flip or crossfade). Then press **Export video**. Recording runs in real time, so a 55 s video takes about 55 s. Keep the tab open. **Cancel** stops it. When it's done, play it back and press **Download video**.
 
 The video runs: intro (logo, SFV vs opponent, date) → front row 1-2-3 → locks 4-5 → back row 6-7-8 → halves 9-10 → centres 12-13 → back three 11-14-15 → bench 16-23 → full team sheet, held for 3 s. Empty shirts are skipped.
 
 **MP4 vs WebM:** Safari and recent Chrome/Edge (126+) record MP4, which Instagram accepts. Browsers that can only record WebM (some Firefox versions) produce a `.webm`, which you may need to convert before posting.
+
+**Face detection** runs in your browser with Google's MediaPipe BlazeFace model, bundled in `vendor/mediapipe/` (Apache-2.0). Nothing is sent anywhere. The 14 MB engine only downloads the first time you add a photo, and it needs a browser with WebAssembly SIMD (Chrome 91+, Safari 16.4+, Firefox 89+). Without it, photos are cropped top-centre and you can adjust them by hand.
 
 **Club logo:** the app uses `assets/sfv-logo.jpeg`. If that file is missing, a plain "SFV" crest is drawn instead.
 
@@ -78,10 +83,17 @@ js/video.js         draws any moment of the timeline; preview player; MediaRecor
 js/teamsheet.js     team sheet layout (per size) and drawing
 js/draw.js          shared canvas helpers
 js/images.js        photo resizing and decoding
+js/crop.js          crop data: card-shaped crops, auto crop from a face box, drag/zoom (pure)
+js/cropeditor.js    photo picker with the drag/zoom crop editor
+js/face.js          face detection (MediaPipe, loaded on first use)
+js/photostyle.js    Off / Auto / Club grade photo looks (pure, works on pixel arrays)
+js/photodraw.js     draws a photo through its crop and the photo style
+vendor/mediapipe/   bundled face detection engine and model
 js/dialog.js        in-page dialogs and toasts (no alert/confirm/prompt)
 scripts/serve.js    tiny static server for local use and tests
 test/unit/          Node tests
 test/e2e/           headless Chrome tests
+test/fixtures/      a public-domain portrait for the face detection test
 ```
 
 **Restyling the video:** edit `VIDEO_TEMPLATE` in `js/timeline.js`. The order and grouping of shirts, every timing, card layout, colours and fonts are all set there. The renderer only asks the timeline what is on screen at time *t*, so a restyle doesn't mean rewriting the animation code. Team sheet sizes and spacing are set in `TEAM_SHEET_SIZES` in `js/teamsheet.js`.

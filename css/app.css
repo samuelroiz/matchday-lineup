@@ -118,7 +118,7 @@ legend { font-weight: 800; padding: 0 6px; color: var(--maroon); }
 .player-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
 .card-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: var(--line); }
 .card-photo { position: relative; margin: 0; aspect-ratio: 4 / 5; background: var(--maroon-tint); display: grid; place-items: center; }
-.card-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
+.card-photo img, .card-photo canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .card-photo figcaption { position: absolute; left: 8px; bottom: 8px; background: rgba(35, 22, 26, 0.75); color: #fff; font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
 .photo-empty { color: var(--muted); font-size: 0.85rem; }
 .card-info { padding: 12px 14px 4px; flex: 1; }
@@ -144,12 +144,16 @@ legend { font-weight: 800; padding: 0 6px; color: var(--maroon); }
 .photo-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .photo-pick { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .photo-label { font-weight: 700; font-size: 0.9rem; }
-.photo-frame { width: 100%; aspect-ratio: 4 / 5; max-height: 300px; border-radius: 10px; background: var(--maroon-tint); display: grid; place-items: center; overflow: hidden; position: relative; }
-.photo-frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
-.photo-pick.busy .photo-frame::after { content: "Resizing…"; position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255, 255, 255, 0.7); font-weight: 700; }
-.photo-pick > .btn, .photo-pick > label { align-self: stretch; }
-.photo-pick { flex-direction: column; }
-.photo-pick .btn { width: 100%; }
+.photo-frame { width: 100%; max-width: 220px; aspect-ratio: 4 / 5; border-radius: 10px; background: var(--maroon-tint); display: grid; place-items: center; overflow: hidden; position: relative; }
+.crop-frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.crop-frame canvas.dragging { cursor: grabbing; }
+.photo-pick.busy .photo-frame::after { content: "Working…"; position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255, 255, 255, 0.75); font-weight: 700; }
+.crop-controls { display: flex; align-items: center; gap: 10px; width: 100%; }
+.zoom-label { display: flex; align-items: center; gap: 8px; flex: 1; font-size: 0.85rem; font-weight: 600; }
+.crop-status { margin: 0; color: var(--muted); font-size: 0.8rem; min-height: 1.2em; }
+.photo-buttons { display: flex; gap: 8px; width: 100%; }
+.photo-buttons > * { flex: 1; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Modal + toasts */
 .modal { border: 0; border-radius: 16px; padding: 0; width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 32px); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); color: var(--ink); }

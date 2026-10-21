@@ -3,7 +3,8 @@
 
 import { SLOT_NAMES, formatFixtureWhen, splitName, visibleStats } from './model.js';
 import { VIDEO_TEMPLATE, cardRects, cardState, ease, font, segmentAt, titleState } from './timeline.js';
-import { drawBackground, drawCover, drawLogo, drawPlaceholder, fitText, roundRectPath } from './draw.js';
+import { drawBackground, drawLogo, drawNameLine, drawPlaceholder, fitText, roundRectPath } from './draw.js';
+import { drawPhoto } from './photodraw.js';
 import { drawTeamSheet, layoutTeamSheet } from './teamsheet.js';
 
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -18,7 +19,8 @@ function makeCanvas(w, h) {
 }
 
 /**
- * data: { match, units, logo, opponentLogo, slots: { [shirt]: { player, serious, fun } } }
+ * data: { match, units, logo, opponentLogo, photoStyle, slots: { [shirt]: { player, serious, fun } } }
+ * serious/fun are photos { img, crop }.
  */
 export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
   const W = template.width;
@@ -86,11 +88,11 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
     ctx.restore();
   }
 
-  function drawPhoto(ctx, x, y, w, h, entry, flip) {
+  function drawCardPhoto(ctx, x, y, w, h, entry, flip) {
     const serious = entry?.serious || null;
     const fun = entry?.fun || serious;
     const name = entry?.player?.name;
-    const paint = (img) => (img ? drawCover(ctx, img, x, y, w, h) : drawPlaceholder(ctx, x, y, w, h, name, S));
+    const paint = (photo) => (photo ? drawPhoto(ctx, photo, x, y, w, h, data.photoStyle) : drawPlaceholder(ctx, x, y, w, h, name, S));
     if (template.transition === 'crossfade') {
       paint(serious);
       if (flip > 0) {
@@ -129,11 +131,11 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
     ctx.fill();
     ctx.restore();
 
-    const pw = w * L.photoWidth;
+    const pw = w * (compact ? L.compactPhotoWidth : L.photoWidth);
     ctx.save();
     roundRectPath(ctx, x, y, w, h, L.radius);
     ctx.clip();
-    drawPhoto(ctx, x, y, pw, h, entry, state.flip);
+    drawCardPhoto(ctx, x, y, pw, h, entry, state.flip);
     ctx.fillStyle = S.accent;
     ctx.fillRect(x + pw, y, 8, h);
     ctx.restore();
@@ -155,10 +157,10 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
       fitText(ctx, SLOT_NAMES[slot].toUpperCase(), ix + numW + 20, numY - h * 0.02, iw - numW - 20, h * 0.055, (s) => f('body', s));
     }
 
-    ctx.fillStyle = S.cardInk;
-    if (first) fitText(ctx, first, ix, y + h * (compact ? 0.42 : 0.4), iw, h * (compact ? 0.085 : 0.08), (s) => f('body', s));
-    ctx.fillStyle = S.maroon;
-    fitText(ctx, (last || 'TBC').toUpperCase(), ix, y + h * (compact ? 0.56 : 0.54), iw, h * (compact ? 0.14 : 0.14), (s) => f('display', s));
+    drawNameLine(ctx, {
+      first, last: (last || 'TBC').toUpperCase(), x: ix, y: y + h * (compact ? 0.5 : 0.5), maxWidth: iw, size: h * (compact ? 0.12 : 0.12),
+      align: 'left', firstFont: (s) => f('body', s), lastFont: (s) => f('display', s), firstColor: S.cardInk, lastColor: S.maroon,
+    });
 
     const stats = visibleStats(player, data.units);
     if (compact) {

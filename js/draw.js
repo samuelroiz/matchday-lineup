@@ -16,18 +16,6 @@ export function roundRectPath(ctx, x, y, w, h, r) {
 
 const imgSize = (img) => ({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height });
 
-/** Draw an image filling the box (CSS object-fit: cover). focusY 0 = keep top, 1 = keep bottom. */
-export function drawCover(ctx, img, x, y, w, h, focusY = 0.3) {
-  const { w: iw, h: ih } = imgSize(img);
-  if (!iw || !ih) return;
-  const scale = Math.max(w / iw, h / ih);
-  const sw = w / scale;
-  const sh = h / scale;
-  const sx = (iw - sw) / 2;
-  const sy = (ih - sh) * focusY;
-  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
-}
-
 /** Draw an image inside the box without cropping (object-fit: contain). */
 export function drawContain(ctx, img, x, y, w, h) {
   const { w: iw, h: ih } = imgSize(img);
@@ -116,4 +104,68 @@ export function drawBackground(ctx, w, h, { background, stripe }) {
     ctx.stroke();
   }
   ctx.restore();
+}
+
+/**
+ * Font size at which "First LAST" fits maxWidth on one line. measure(text, size, part) returns
+ * a width, with part 'first' or 'last' (they can use different fonts). Never wraps or truncates.
+ */
+export function fitNameSize(measure, first, last, maxWidth, size, { gapEm = 0.25, minSize = 4 } = {}) {
+  const width = (s) => (first ? measure(first, s, 'first') + gapEm * s : 0) + measure(last, s, 'last');
+  let s = size;
+  const w = width(s);
+  if (w > maxWidth) s = (s * maxWidth) / w; // text width scales with size, so this lands close
+  while (s > minSize && width(s) > maxWidth) s -= 0.25;
+  return Math.max(minSize, s);
+}
+
+/**
+ * Draw a player's name on one line, first name in one font/colour and SURNAME in another,
+ * shrunk to fit. Returns { size, width }.
+ */
+export function drawNameLine(ctx, { first, last, x, y, maxWidth, size, align = 'center', firstFont, lastFont, firstColor, lastColor }) {
+  const measure = (t, s, part) => {
+    ctx.font = (part === 'first' ? firstFont : lastFont)(s);
+    return ctx.measureText(t).width;
+  };
+  const s = fitNameSize(measure, first, last, maxWidth, size);
+  const fw = first ? measure(first, s, 'first') : 0;
+  const gap = first ? 0.25 * s : 0;
+  const lw = measure(last, s, 'last');
+  const total = fw + gap + lw;
+  const start = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
+  ctx.save();
+  ctx.textAlign = 'left';
+  if (first) {
+    ctx.font = firstFont(s);
+    ctx.fillStyle = firstColor;
+    ctx.fillText(first, start, y);
+  }
+  ctx.font = lastFont(s);
+  ctx.fillStyle = lastColor;
+  ctx.fillText(last, start + fw + gap, y);
+  ctx.restore();
+  return { size: s, width: total };
+}
+
+/** Shirt number on a dark badge so it reads on any photo. (x, y) is the badge's top-left. */
+export function drawNumberBadge(ctx, number, x, y, size, { fill = 'rgba(36, 8, 14, 0.85)', ink = '#f2b705', ring = 'rgba(242, 183, 5, 0.9)', font }) {
+  const text = String(number);
+  ctx.save();
+  ctx.font = font(size);
+  const tw = ctx.measureText(text).width;
+  const bw = tw + size * 0.5;
+  const bh = size * 1.08;
+  roundRectPath(ctx, x, y, bw, bh, bh * 0.22);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = Math.max(2, size * 0.05);
+  ctx.strokeStyle = ring;
+  ctx.stroke();
+  ctx.fillStyle = ink;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + bw / 2, y + bh / 2 + size * 0.04);
+  ctx.restore();
+  return { w: bw, h: bh };
 }

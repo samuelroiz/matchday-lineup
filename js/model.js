@@ -1,5 +1,7 @@
 // Pure data helpers: no DOM, no storage. Safe to import from Node tests.
 
+import { normalizeCrop, validateCrop } from './crop.js';
+
 export const POSITIONS = [
   'Prop', 'Hooker', 'Lock', 'Flanker', 'Number 8',
   'Scrum-half', 'Fly-half', 'Centre', 'Wing', 'Fullback',
@@ -113,6 +115,11 @@ export function normalizePlayer(input = {}) {
       serious: input.photos?.serious || null,
       fun: input.photos?.fun || null,
     },
+    // Crop per photo; null means top-centre. Replacing a photo replaces its crop.
+    crops: {
+      serious: normalizeCrop(input.crops?.serious),
+      fun: normalizeCrop(input.crops?.fun),
+    },
     createdAt: input.createdAt || now,
     updatedAt: input.updatedAt || now,
   };
@@ -141,6 +148,10 @@ export function validatePlayer(p) {
   checkRange(errors, 'weightKg', p.weightKg, LIMITS.weightKg, { label: 'Weight (kg)' });
   checkRange(errors, 'years', p.years, LIMITS.years, { integer: true, label: 'Years at SFV' });
   checkRange(errors, 'caps', p.caps, LIMITS.caps, { integer: true, label: 'Caps' });
+  for (const kind of ['serious', 'fun']) {
+    const msg = validateCrop(p.crops?.[kind]);
+    if (msg) errors.photos = `${kind === 'serious' ? 'Serious' : 'Fun'} photo: ${msg}`;
+  }
   return errors;
 }
 
@@ -268,6 +279,12 @@ export function removePlayerFromMatch(m, playerId) {
   }
   return changed;
 }
+
+// Kick-off choices every 15 minutes, 7:00 AM to 9:45 PM, as "HH:MM".
+export const KICKOFF_TIMES = Array.from({ length: 60 }, (_, i) => {
+  const mins = 7 * 60 + i * 15;
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+});
 
 export function formatKickoff(hhmm) {
   if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return '';

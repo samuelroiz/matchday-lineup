@@ -79,7 +79,7 @@ async function addPlayer(p) {
   for (const kind of ['serious', 'fun']) {
     const input = await page.$(`dialog .photo-pick[data-kind=${kind}] input[type=file]`);
     await input.uploadFile(p[kind]);
-    await page.waitForSelector(`dialog .photo-pick[data-kind=${kind}] img:not([hidden])`);
+    await page.waitForSelector(`dialog .photo-pick[data-kind=${kind}] canvas[data-crop]:not([hidden])`);
   }
   await page.click('dialog [data-action=save]');
   await page.waitForFunction(() => !document.querySelector('dialog[open]'));
@@ -98,9 +98,14 @@ test('add players with Serious and Fun photos', async () => {
   const cards = await page.$$eval('.player-card', (els) => els.map((c) => c.querySelector('h3').textContent));
   assert.deepEqual(cards, SQUAD.map((p) => p.name).sort());
 
-  // Both photos show on each card, resized so the longest side is at most 1200 px.
-  await page.waitForFunction(() => [...document.querySelectorAll('.player-card img')].filter((i) => !i.hidden && i.complete && i.naturalWidth).length === 6);
-  const sizes = await page.$$eval('.player-card img', (imgs) => imgs.map((i) => [i.naturalWidth, i.naturalHeight]));
+  // Both photos show on each card, and the stored originals are resized to at most 1200 px.
+  await page.waitForFunction(() => document.querySelectorAll('.player-card canvas[data-rendered]').length === 6);
+  const sizes = await page.evaluate(async () => {
+    const { openStore } = await import('/js/storage.js');
+    const store = await openStore();
+    return Promise.all((await store.getAll('photos')).map(async (r) => { const b = await createImageBitmap(r.blob); return [b.width, b.height]; }));
+  });
+  assert.equal(sizes.length, 6);
   for (const [w, h] of sizes) assert.ok(Math.max(w, h) === 1200, `photo is ${w}x${h}`);
 
   const alex = await page.$$eval('.player-card', (els) => {

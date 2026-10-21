@@ -1,8 +1,9 @@
 // Team sheet image: 15 photo cards, the bench, logo and fixture details.
 // layoutTeamSheet is pure (tested in Node); drawTeamSheet paints onto any 2D context.
 
-import { BENCH_SLOTS, STARTER_SLOTS, formatFixtureWhen, shortName, splitName } from './model.js';
-import { drawBackground, drawCover, drawLogo, drawPlaceholder, fitText, roundRectPath } from './draw.js';
+import { BENCH_SLOTS, STARTER_SLOTS, formatKickoff, formatMatchDate, shortName, splitName } from './model.js';
+import { drawBackground, drawLogo, drawNameLine, drawNumberBadge, drawPlaceholder, fitText, roundRectPath } from './draw.js';
+import { drawPhoto } from './photodraw.js';
 
 export const SHEET_STYLE = {
   background: ['#5a1520', '#7a1f2b', '#3d0e16'],
@@ -62,6 +63,12 @@ export function layoutTeamSheet(sizeKey = 'post') {
   };
 }
 
+/** "Sat, Oct 24, 2026 · Kick-off 2:30 PM" */
+export function fixtureLine(m) {
+  const ko = formatKickoff(m.kickoff);
+  return [formatMatchDate(m.date), ko && `Kick-off ${ko}`].filter(Boolean).join(' · ');
+}
+
 function drawHeader(ctx, box, data, st) {
   const r = box.h * 0.4;
   const cy = box.y + box.h / 2;
@@ -77,20 +84,20 @@ function drawHeader(ctx, box, data, st) {
   ctx.fillStyle = st.white;
   fitText(ctx, `SFV vs ${m.opponent || 'TBC'}`.toUpperCase(), cx, box.y + box.h * 0.56, textW, box.h * 0.3, st.display);
   ctx.fillStyle = st.white;
-  fitText(ctx, formatFixtureWhen(m), cx, box.y + box.h * 0.76, textW, box.h * 0.12, st.body);
+  fitText(ctx, fixtureLine(m), cx, box.y + box.h * 0.76, textW, box.h * 0.12, st.body);
   if (m.venue) {
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     fitText(ctx, m.venue, cx, box.y + box.h * 0.93, textW, box.h * 0.1, st.body);
   }
 }
 
-function drawCard(ctx, rect, slot, entry, st) {
+function drawCard(ctx, rect, slot, entry, st, photoStyle) {
   const { x, y, w, h } = rect;
   ctx.save();
   roundRectPath(ctx, x, y, w, h, 12);
   ctx.clip();
   const player = entry?.player;
-  if (entry?.serious) drawCover(ctx, entry.serious, x, y, w, h);
+  if (entry?.serious) drawPhoto(ctx, entry.serious, x, y, w, h, photoStyle);
   else drawPlaceholder(ctx, x, y, w, h, player?.name, st);
   const g = ctx.createLinearGradient(0, y + h * 0.5, 0, y + h);
   g.addColorStop(0, 'rgba(30,5,10,0)');
@@ -101,24 +108,15 @@ function drawCard(ctx, rect, slot, entry, st) {
   ctx.fillRect(x, y + h - 5, w, 5);
   ctx.restore();
 
-  // Big shirt number
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = st.accent;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.font = st.display(h * 0.22);
-  ctx.fillText(String(slot), x + w * 0.07, y + h * 0.04);
-  ctx.restore();
+  // Shirt number on a dark badge, so gold reads on light photos too.
+  drawNumberBadge(ctx, slot, x + w * 0.05, y + w * 0.05, h * 0.16, { font: st.display });
 
-  ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   const { first, last } = splitName(player?.name || '');
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  if (first) fitText(ctx, first, x + w / 2, y + h * 0.83, w - 16, h * 0.065, st.body);
-  ctx.fillStyle = st.white;
-  fitText(ctx, (last || 'TBC').toUpperCase(), x + w / 2, y + h * 0.94, w - 14, h * 0.1, st.display);
+  drawNameLine(ctx, {
+    first, last: (last || 'TBC').toUpperCase(), x: x + w / 2, y: y + h * 0.93, maxWidth: w - 14, size: h * 0.085,
+    firstFont: st.body, lastFont: st.display, firstColor: 'rgba(255,255,255,0.85)', lastColor: st.white,
+  });
 }
 
 function drawBench(ctx, bench, data, st) {
@@ -157,15 +155,15 @@ function drawBench(ctx, bench, data, st) {
 }
 
 /**
- * data: { match, logo, opponentLogo, slots: { [shirt]: { player, serious, fun } } }
- * Images may be HTMLImageElement, ImageBitmap or canvas; missing ones get placeholders.
+ * data: { match, logo, opponentLogo, photoStyle, slots: { [shirt]: { player, serious, fun } } }
+ * serious/fun are photos { img, crop } (see photodraw.js); missing ones get placeholders.
  */
 export function drawTeamSheet(ctx, sizeKey, data, st = SHEET_STYLE) {
   const L = layoutTeamSheet(sizeKey);
   ctx.save();
   drawBackground(ctx, L.width, L.height, st);
   drawHeader(ctx, L.header, data, st);
-  for (const slot of STARTER_SLOTS) drawCard(ctx, L.cards[slot], slot, data.slots[slot], st);
+  for (const slot of STARTER_SLOTS) drawCard(ctx, L.cards[slot], slot, data.slots[slot], st, data.photoStyle);
   drawBench(ctx, L.bench, data, st);
   ctx.fillStyle = 'rgba(242,183,5,0.85)';
   ctx.textAlign = 'center';

@@ -1,7 +1,7 @@
 // UI wiring for the four tabs. Data rules live in model.js; drawing in teamsheet.js / video.js.
 
 import {
-  ALL_SLOTS, BENCH_SLOTS, POSITIONS, SLOT_NAMES, SLOT_POSITIONS, STARTER_SLOTS,
+  ALL_SLOTS, BENCH_SLOTS, POSITIONS, SLOT_NAMES, SLOT_POSITIONS, STARTER_SLOTS, KICKOFF_TIMES, formatKickoff,
   cmToFtIn, copyMatch, countPicked, findDuplicates, formatFixtureWhen, ftInToCm, isValid,
   kgToLb, lbToKg, matchFileBase, normalizeMatch, normalizePlayer, removePlayerFromMatch,
   toNumberOrNull, validateMatch, validatePlayer, visibleStats, STAT_KEYS, newId,
@@ -9,6 +9,10 @@ import {
 import { openStore } from './storage.js';
 import { createBackup, describeRestore, restoreBackup } from './backup.js';
 import { forgetPhoto, loadImage, photoImage, resizeImage } from './images.js';
+import { createPhotoPicker } from './cropeditor.js';
+import { drawPhoto } from './photodraw.js';
+import { PHOTO_STYLES } from './photostyle.js';
+import { CROP_ASPECT } from './crop.js';
 import { confirmDialog, el, openDialog, toast } from './dialog.js';
 import { layoutTeamSheet, drawTeamSheet } from './teamsheet.js';
 import { SPEEDS, VIDEO_TEMPLATE, buildTimeline } from './timeline.js';
@@ -17,7 +21,7 @@ import { createPreviewPlayer, createVideoRenderer, recordVideo } from './video.j
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-const DEFAULT_SETTINGS = { id: 'settings', units: 'imperial', activeMatchId: null, speed: 1, transition: 'flip', sheetSize: 'post' };
+const DEFAULT_SETTINGS = { id: 'settings', units: 'imperial', photoStyle: 'auto', activeMatchId: null, speed: 1, transition: 'flip', sheetSize: 'post' };
 // ?clip=5 exports only the first 5 seconds of the video (handy for a quick test).
 const CLIP_SECONDS = Math.max(0, Number(new URLSearchParams(location.search).get('clip')) || 0);
 
@@ -111,10 +115,19 @@ function statsList(p) {
     el('dt', {}, s.label), el('dd', {}, s.value, shown.has(s.key) ? '' : el('span', { class: 'off-tag' }, 'hidden')))));
 }
 
-function photoFigure(id, label, name) {
-  const img = el('img', { alt: `${label} photo of ${name}`, hidden: true, loading: 'lazy' });
-  const fig = el('figure', { class: 'card-photo' }, el('span', { class: 'photo-empty' }, 'No photo'), img, el('figcaption', {}, label));
-  if (id) photoUrl(id).then((url) => { if (url) { img.src = url; img.hidden = false; fig.querySelector('.photo-empty').remove(); } });
+const THUMB_W = 320;
+function photoFigure(id, crop, label, name) {
+  const canvas = el('canvas', { width: String(THUMB_W), height: String(Math.round(THUMB_W / CROP_ASPECT)), role: 'img', 'aria-label': `${label} photo of ${name}`, hidden: true });
+  const fig = el('figure', { class: 'card-photo' }, el('span', { class: 'photo-empty' }, 'No photo'), canvas, el('figcaption', {}, label));
+  if (id) {
+    photoImage(state.store, id).then((img) => {
+      if (!img) return;
+      drawPhoto(canvas.getContext('2d'), { img, crop }, 0, 0, canvas.width, canvas.height, state.settings.photoStyle);
+      canvas.hidden = false;
+      canvas.dataset.rendered = 'true';
+      fig.querySelector('.photo-empty')?.remove();
+    });
+  }
   return fig;
 }
 
@@ -124,7 +137,7 @@ function renderSquad() {
   const players = [...state.players].sort(byName)
     .filter((p) => !q || p.name.toLowerCase().includes(q) || p.nickname.toLowerCase().includes(q) || p.positions.join(' ').toLowerCase().includes(q));
   list.replaceChildren(...players.map((p) => el('article', { class: 'player-card', dataset: { id: p.id } },
-    el('div', { class: 'card-photos' }, photoFigure(p.photos.serious, 'Serious', p.name), photoFigure(p.photos.fun, 'Fun', p.name)),
+    el('div', { class: 'card-photos' }, photoFigure(p.photos.serious, p.crops.serious, 'Serious', p.name), photoFigure(p.photos.fun, p.crops.fun, 'Fun', p.name)),
     el('div', { class: 'card-info' },
       el('h3', {}, p.name),
       p.nickname ? el('p', { class: 'nick' }, `“${p.nickname}”`) : null,
@@ -212,40 +225,20 @@ function fillPlayerForm(form, p) {
   for (const k of STAT_KEYS) f[`show-${k}`].checked = p ? p.show[k] !== false : true;
 }
 
-function openPlayerForm(existing = null) {
+async function openPlayerForm(existing = null) {
   const form = $('#player-form-tpl').content.firstElementChild.cloneNode(true);
   fillPlayerForm(form, existing);
-  // pending[kind]: undefined = unchanged, null = removed, Blob = new photo
-  const pending = {};
-  const objectUrls = [];
-
-  for (const box of $$('.photo-pick', form)) {
-    const kind = box.dataset.kind;
-    const img = $('img', box);
-    const empty = $('.photo-empty', box);
-    const clear = $('[data-clear]', box);
-    const show = (url) => { img.src = url || ''; img.hidden = !url; empty.hidden = !!url; clear.hidden = !url; };
-    const current = existing?.photos[kind];
-    if (current) photoUrl(current).then(show);
-    $('input[type=file]', box).addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      e.target.value = '';
-      if (!file) return;
-      box.classList.add('busy');
-      try {
-        const blob = await resizeImage(file);
-        pending[kind] = blob;
-        const url = URL.createObjectURL(blob);
-        objectUrls.push(url);
-        show(url);
-      } catch (err) {
-        toast(err.message, { type: 'error' });
-      } finally {
-        box.classList.remove('busy');
-      }
+  const pickers = {};
+  for (const [kind, label] of [['serious', 'Serious photo'], ['fun', 'Fun photo']]) {
+    const id = existing?.photos[kind];
+    const img = id ? await photoImage(state.store, id) : null;
+    pickers[kind] = createPhotoPicker({
+      label, kind,
+      existing: img ? { img, crop: existing.crops[kind] } : null,
+      getStyle: () => state.settings.photoStyle,
     });
-    clear.addEventListener('click', () => { pending[kind] = null; show(null); });
   }
+  $('.photo-pickers', form).replaceChildren(pickers.serious.element, pickers.fun.element);
 
   const title = existing ? `Edit ${existing.name}` : 'Add player';
   return openDialog({
@@ -261,10 +254,19 @@ function openPlayerForm(existing = null) {
       if (!isValid(errors)) { $('.field.invalid input', form)?.focus(); return false; }
       try {
         for (const kind of ['serious', 'fun']) {
-          if (!(kind in pending)) continue;
+          const r = pickers[kind].result();
           const old = existing?.photos[kind];
-          player.photos[kind] = pending[kind] ? await savePhoto(pending[kind]) : null;
-          if (old) await deletePhoto(old);
+          if (r.blob) {
+            player.photos[kind] = await savePhoto(r.blob);
+            player.crops[kind] = r.crop;
+            if (old) await deletePhoto(old);
+          } else if (r.removed) {
+            player.photos[kind] = null;
+            player.crops[kind] = null;
+            if (old) await deletePhoto(old);
+          } else if (r.crop) {
+            player.crops[kind] = r.crop;
+          }
         }
         await state.store.put('players', player);
       } catch (e) {
@@ -278,7 +280,7 @@ function openPlayerForm(existing = null) {
       toast(existing ? `Saved ${player.name}.` : `${player.name} added to the squad.`, { type: 'success' });
       return true;
     },
-  }).finally(() => objectUrls.forEach((u) => URL.revokeObjectURL(u)));
+  });
 }
 
 async function deletePlayer(p) {
@@ -413,6 +415,7 @@ function renderMatchEditor() {
   if (!m) return;
   const form = $('#match-form');
   $('#match-title').textContent = m.opponent ? `SFV vs ${m.opponent}` : 'New match';
+  setKickoffOptions(m.kickoff);
   for (const k of ['opponent', 'date', 'kickoff', 'venue', 'competition']) {
     if (document.activeElement !== form.elements[k]) form.elements[k].value = m[k] || '';
   }
@@ -504,19 +507,32 @@ async function deleteActiveMatch() {
   toast('Match deleted.');
 }
 
+// Kick-off is a list rather than <input type=time>: Safari shows an empty time input as a
+// greyed "12:30 PM" that looks filled in but saves nothing.
+function setKickoffOptions(current) {
+  const sel = $('#m-kickoff');
+  const times = KICKOFF_TIMES.includes(current) || !current ? KICKOFF_TIMES : [...KICKOFF_TIMES, current].sort();
+  if (sel.options.length === times.length + 1) return;
+  sel.replaceChildren(el('option', { value: '' }, 'Not set'), ...times.map((t) => el('option', { value: t }, formatKickoff(t))));
+}
+
 function bindMatchForm() {
   const form = $('#match-form');
   form.addEventListener('submit', (e) => e.preventDefault());
-  form.addEventListener('input', (e) => {
+  // Some browsers only fire 'change' for selects and date pickers, so listen to both.
+  const onFixtureEdit = (e) => {
     const m = activeMatch();
     const k = e.target.name;
     if (!m || !['opponent', 'date', 'kickoff', 'venue', 'competition'].includes(k)) return;
+    if (m[k] === e.target.value) return;
     m[k] = e.target.value;
     touched.add(k);
     $('#match-title').textContent = m.opponent ? `SFV vs ${m.opponent}` : 'New match';
     showErrors(form, touchedErrors(m));
     scheduleMatchSave(m);
-  });
+  };
+  form.addEventListener('input', onFixtureEdit);
+  form.addEventListener('change', onFixtureEdit);
   form.addEventListener('focusout', (e) => {
     const m = activeMatch();
     if (!m || !e.target.name) return;
@@ -568,19 +584,21 @@ function matchIssues(m) {
 
 // ---------- render data ----------
 
+async function photoOf(p, kind) {
+  const img = await photoImage(state.store, p.photos[kind]);
+  return img ? { img, crop: p.crops[kind] } : null;
+}
+
 async function buildRenderData(m) {
   const slots = {};
   for (const s of ALL_SLOTS) {
     const p = playerById(m.selection[s]);
-    slots[s] = p ? {
-      player: p,
-      serious: await photoImage(state.store, p.photos.serious),
-      fun: await photoImage(state.store, p.photos.fun),
-    } : null;
+    slots[s] = p ? { player: p, serious: await photoOf(p, 'serious'), fun: await photoOf(p, 'fun') } : null;
   }
   return {
     match: m,
     units: state.settings.units,
+    photoStyle: state.settings.photoStyle,
     logo: state.logo,
     opponentLogo: await photoImage(state.store, m.opponentLogo),
     slots,
@@ -789,6 +807,10 @@ async function init() {
   $('#squad-search').addEventListener('input', renderSquad);
   $('#units').value = state.settings.units;
   $('#units').addEventListener('change', async (e) => { state.settings.units = e.target.value; await saveSettings(); renderSquad(); });
+  const styleSel = $('#photo-style');
+  styleSel.replaceChildren(...PHOTO_STYLES.map((s) => el('option', { value: s.value }, s.label)));
+  styleSel.value = state.settings.photoStyle;
+  styleSel.addEventListener('change', async () => { state.settings.photoStyle = styleSel.value; await saveSettings(); renderSquad(); });
   $('#backup').addEventListener('click', backupSquad);
   $('#restore').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) restoreSquad(f); });
 

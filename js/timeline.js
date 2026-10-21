@@ -45,7 +45,8 @@ export const VIDEO_TEMPLATE = {
     maxCardHeight: 420,
     compactColumns: 2,
     titleY: 250,         // group title baseline
-    photoWidth: 0.42,    // share of a card's width taken by the photo
+    photoWidth: 0.36,    // share of a card's width taken by the photo (about the 4:5 crop shape)
+    compactPhotoWidth: 0.5,
     radius: 28,
   },
 

@@ -12,7 +12,7 @@ async function seed(store) {
   await store.put('photos', { id: 'ph-2', blob: bytes(4, 5, 6, 7) });
   await store.put('photos', { id: 'logo-1', blob: bytes(9) });
   await store.put('photos', { id: 'orphan', blob: bytes(0) });
-  const a = normalizePlayer({ id: 'p-a', name: 'Alex Ortega', positions: ['Prop'], photos: { serious: 'ph-1', fun: 'ph-2' } });
+  const a = normalizePlayer({ id: 'p-a', name: 'Alex Ortega', positions: ['Prop'], photos: { serious: 'ph-1', fun: 'ph-2' }, crops: { serious: { cx: 0.45, cy: 0.3, zoom: 1.8, source: 'face' } } });
   const b = normalizePlayer({ id: 'p-b', name: 'Bo Tanaka', show: { weight: false } });
   await store.put('players', a);
   await store.put('players', b);
@@ -54,6 +54,7 @@ test('restore into an empty device brings back everything, photos included', asy
   const a = await dest.get('players', 'p-a');
   assert.equal(a.name, 'Alex Ortega');
   assert.equal(a.photos.fun, 'ph-2');
+  assert.deepEqual(a.crops.serious, { cx: 0.45, cy: 0.3, zoom: 1.8, source: 'face' }, 'crops survive backup and restore');
   const photo = await dest.get('photos', 'ph-2');
   assert.deepEqual([...new Uint8Array(await photo.blob.arrayBuffer())], [4, 5, 6, 7]);
   assert.equal((await dest.get('players', 'p-b')).show.weight, false);
