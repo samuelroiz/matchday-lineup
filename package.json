@@ -1,0 +1,19 @@
+{
+  "name": "matchday-lineup",
+  "version": "1.0.0",
+  "private": true,
+  "description": "San Fernando Valley Rugby Club team sheet and lineup video maker. Runs entirely in the browser.",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test 'test/unit/*.test.js'",
+    "test:e2e": "node --test --test-concurrency=1 'test/e2e/*.test.js'"
+  },
+  "devDependencies": {
+    "puppeteer": "^25.15.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

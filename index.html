@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Matchday Lineup · SFV Rugby</title>
+  <meta name="description" content="Team sheet images and lineup videos for San Fernando Valley Rugby Club. Runs entirely in your browser.">
+  <meta name="theme-color" content="#7a1f2b">
+  <link rel="icon" href="assets/sfv-logo.jpeg">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <img class="club-logo" src="assets/sfv-logo.jpeg" alt="" width="56" height="56">
+    <div class="brand">
+      <h1>Matchday Lineup</h1>
+      <p>San Fernando Valley Rugby Club</p>
+    </div>
+    <span id="storage-note" class="storage-note" hidden></span>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-btn-squad" aria-controls="tab-squad" aria-selected="true" data-tab="squad"><span class="step">1 · </span>Squad</button>
+    <button role="tab" id="tab-btn-match" aria-controls="tab-match" aria-selected="false" data-tab="match"><span class="step">2 · </span>Match</button>
+    <button role="tab" id="tab-btn-sheet" aria-controls="tab-sheet" aria-selected="false" data-tab="sheet"><span class="step">3 · </span>Team sheet</button>
+    <button role="tab" id="tab-btn-video" aria-controls="tab-video" aria-selected="false" data-tab="video"><span class="step">4 · </span>Video</button>
+  </nav>
+
+  <main>
+    <!-- Squad -->
+    <section id="tab-squad" role="tabpanel" aria-labelledby="tab-btn-squad" class="panel">
+      <div class="toolbar">
+        <button type="button" class="btn btn-primary" id="add-player">+ Add player</button>
+        <input type="search" id="squad-search" placeholder="Search squad" aria-label="Search squad">
+        <span class="spacer"></span>
+        <label class="inline-field">Show stats in
+          <select id="units">
+            <option value="imperial">ft/in · lb</option>
+            <option value="metric">cm · kg</option>
+          </select>
+        </label>
+        <button type="button" class="btn" id="backup">Back up squad</button>
+        <label class="btn file-btn">Restore…
+          <input type="file" id="restore" accept="application/json,.json" hidden>
+        </label>
+      </div>
+      <p class="hint" id="squad-count"></p>
+      <div id="player-list" class="player-grid"></div>
+      <div id="squad-empty" class="empty" hidden>
+        <h2>No players yet</h2>
+        <p>Add each player once with a Serious and a Fun photo. Next week you only pick the team.</p>
+      </div>
+    </section>
+
+    <!-- Match -->
+    <section id="tab-match" role="tabpanel" aria-labelledby="tab-btn-match" class="panel" hidden>
+      <div class="match-layout">
+        <aside class="match-list-wrap">
+          <div class="toolbar compact">
+            <button type="button" class="btn btn-primary" id="new-match">+ New match</button>
+          </div>
+          <ul id="match-list" class="match-list"></ul>
+        </aside>
+        <div id="match-editor" class="match-editor">
+          <div id="match-none" class="empty">
+            <h2>No match selected</h2>
+            <p>Create a match, or pick last week's and press <strong>Copy for next match</strong>.</p>
+          </div>
+          <form id="match-form" hidden novalidate>
+            <div class="editor-head">
+              <h2 id="match-title">Match</h2>
+              <span id="save-status" class="save-status" aria-live="polite"></span>
+              <span class="spacer"></span>
+              <button type="button" class="btn" id="copy-match">Copy for next match</button>
+              <button type="button" class="btn btn-danger-ghost" id="delete-match">Delete</button>
+            </div>
+            <fieldset class="fixture">
+              <legend>Fixture</legend>
+              <div class="field-grid">
+                <label class="field">Opponent <input name="opponent" id="m-opponent" maxlength="60" required autocomplete="off"><small class="err" data-for="opponent"></small></label>
+                <label class="field">Date <input name="date" id="m-date" type="date" required><small class="err" data-for="date"></small></label>
+                <label class="field">Kick-off <input name="kickoff" id="m-kickoff" type="time"><small class="err" data-for="kickoff"></small></label>
+                <label class="field">Venue <input name="venue" id="m-venue" maxlength="80" autocomplete="off"><small class="err" data-for="venue"></small></label>
+                <label class="field">Competition <input name="competition" id="m-competition" maxlength="60" autocomplete="off" placeholder="e.g. SCRFU D1 League"><small class="err" data-for="competition"></small></label>
+                <div class="field">Opponent logo
+                  <div class="logo-pick">
+                    <img id="m-logo-preview" alt="" hidden>
+                    <label class="btn btn-small file-btn">Upload…<input type="file" id="m-logo" accept="image/*" hidden></label>
+                    <button type="button" class="btn btn-small" id="m-logo-remove" hidden>Remove</button>
+                  </div>
+                </div>
+              </div>
+            </fieldset>
+            <div id="dup-warning" class="warning" role="alert" hidden></div>
+            <fieldset>
+              <legend>Starting XV <span id="xv-count" class="count"></span></legend>
+              <div id="starters" class="slot-groups"></div>
+            </fieldset>
+            <fieldset>
+              <legend>Bench <span id="bench-count" class="count"></span></legend>
+              <div id="bench" class="slot-groups"></div>
+            </fieldset>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team sheet -->
+    <section id="tab-sheet" role="tabpanel" aria-labelledby="tab-btn-sheet" class="panel" hidden>
+      <div class="toolbar">
+        <div class="seg" role="radiogroup" aria-label="Size">
+          <label><input type="radio" name="sheet-size" value="post" checked> Post 1080×1350</label>
+          <label><input type="radio" name="sheet-size" value="story"> Story 1080×1920</label>
+        </div>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-primary" id="sheet-export">Download PNG</button>
+        <a id="sheet-link" class="btn" hidden>Save again</a>
+      </div>
+      <p class="hint" id="sheet-note"></p>
+      <div class="canvas-stage"><canvas id="sheet-canvas" width="1080" height="1350" aria-label="Team sheet preview"></canvas></div>
+    </section>
+
+    <!-- Video -->
+    <section id="tab-video" role="tabpanel" aria-labelledby="tab-btn-video" class="panel" hidden>
+      <div class="video-layout">
+        <div class="canvas-stage tall"><canvas id="video-canvas" width="1080" height="1920" aria-label="Lineup video preview"></canvas></div>
+        <div class="video-side">
+          <p class="hint" id="video-note"></p>
+          <div class="field-row">
+            <label class="field">Speed <select id="video-speed"></select></label>
+            <label class="field">Photo change
+              <select id="video-transition">
+                <option value="flip">Card flip</option>
+                <option value="crossfade">Crossfade</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint" id="video-length"></p>
+          <div class="player-controls">
+            <button type="button" class="btn" id="video-play">▶ Preview</button>
+            <input type="range" id="video-scrub" min="0" max="1000" value="0" aria-label="Preview position">
+            <span id="video-time" class="mono">0:00</span>
+          </div>
+          <button type="button" class="btn btn-primary btn-wide" id="video-export">Export video</button>
+          <div id="video-progress" class="progress-wrap" hidden>
+            <progress id="video-progress-bar" max="1" value="0"></progress>
+            <span id="video-progress-label" class="mono">0%</span>
+            <button type="button" class="btn btn-small" id="video-cancel">Cancel</button>
+            <p class="hint">Recording happens in real time. Keep this tab open.</p>
+          </div>
+          <div id="video-result" class="video-result" hidden>
+            <video id="video-output" controls playsinline muted></video>
+            <a id="video-link" class="btn btn-primary btn-wide">Download video</a>
+            <p class="hint" id="video-format"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <template id="player-form-tpl">
+    <form class="player-form" novalidate>
+      <div class="field-grid">
+        <label class="field">Name <input name="name" maxlength="61" required autocomplete="off"><small class="err" data-for="name"></small></label>
+        <label class="field">Nickname <span class="opt">optional</span><input name="nickname" maxlength="31" autocomplete="off"><small class="err" data-for="nickname"></small></label>
+      </div>
+      <div class="field">Usual positions<div class="chips" data-positions></div><small class="err" data-for="positions"></small></div>
+      <div class="field-grid three">
+        <div class="field">Height
+          <div class="unit-row">
+            <span data-height="cm"><input name="heightCm" type="number" inputmode="decimal" min="120" max="230" step="0.1" placeholder="cm" aria-label="Height in cm"></span>
+            <span data-height="ftin" hidden><input name="heightFt" type="number" inputmode="numeric" min="3" max="7" placeholder="ft" aria-label="Height feet"><input name="heightIn" type="number" inputmode="numeric" min="0" max="11" placeholder="in" aria-label="Height inches"></span>
+            <select name="heightUnit" aria-label="Height unit"><option value="ftin">ft/in</option><option value="cm">cm</option></select>
+          </div>
+          <small class="err" data-for="heightCm"></small>
+        </div>
+        <div class="field">Weight
+          <div class="unit-row">
+            <input name="weight" type="number" inputmode="decimal" min="0" step="0.1" aria-label="Weight">
+            <select name="weightUnit" aria-label="Weight unit"><option value="lb">lb</option><option value="kg">kg</option></select>
+          </div>
+          <small class="err" data-for="weightKg"></small>
+        </div>
+        <label class="field">Years at SFV <input name="years" type="number" inputmode="numeric" min="0" max="60" step="1"><small class="err" data-for="years"></small></label>
+        <label class="field">Caps <span class="opt">optional</span><input name="caps" type="number" inputmode="numeric" min="0" max="1000" step="1"><small class="err" data-for="caps"></small></label>
+      </div>
+      <div class="field">Show in the video
+        <div class="toggles">
+          <label><input type="checkbox" name="show-height" checked> Height</label>
+          <label><input type="checkbox" name="show-weight" checked> Weight</label>
+          <label><input type="checkbox" name="show-years" checked> Years at SFV</label>
+          <label><input type="checkbox" name="show-caps" checked> Caps</label>
+        </div>
+      </div>
+      <div class="photo-pickers">
+        <div class="photo-pick" data-kind="serious">
+          <span class="photo-label">Serious photo</span>
+          <div class="photo-frame"><img alt="" hidden><span class="photo-empty">No photo</span></div>
+          <label class="btn btn-small file-btn">Choose…<input type="file" accept="image/*" name="photo-serious" hidden></label>
+          <button type="button" class="btn btn-small" data-clear hidden>Remove</button>
+        </div>
+        <div class="photo-pick" data-kind="fun">
+          <span class="photo-label">Fun photo</span>
+          <div class="photo-frame"><img alt="" hidden><span class="photo-empty">No photo</span></div>
+          <label class="btn btn-small file-btn">Choose…<input type="file" accept="image/*" name="photo-fun" hidden></label>
+          <button type="button" class="btn btn-small" data-clear hidden>Remove</button>
+        </div>
+      </div>
+      <small class="err" data-for="photos"></small>
+    </form>
+  </template>
+</body>
+</html>
