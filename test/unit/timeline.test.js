@@ -124,6 +124,17 @@ test('card rectangles stay on the canvas and never overlap', () => {
   }
 });
 
+test('a short bench keeps the full bench card size instead of stretching tall', () => {
+  const T = VIDEO_TEMPLATE;
+  const full = cardRects(T, 8, true)[0];
+  for (const n of [1, 2, 3, 4, 5, 6, 7]) {
+    for (const r of cardRects(T, n, true)) {
+      assert.equal(r.h, full.h, `${n} bench cards`);
+      assert.equal(r.w, full.w, `${n} bench cards`);
+    }
+  }
+});
+
 test('video format prefers MP4 and falls back to WebM', () => {
   assert.equal(pickVideoFormat((t) => t.startsWith('video/mp4')).ext, 'mp4');
   const webm = pickVideoFormat((t) => t.startsWith('video/webm'));

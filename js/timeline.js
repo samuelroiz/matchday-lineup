@@ -46,6 +46,7 @@ export const VIDEO_TEMPLATE = {
     side: 60,
     gap: 40,             // room for cards to grow on the flip without touching
     maxCardHeight: 420,
+    maxCompactCardHeight: 300, // a full bench's card height; a short bench keeps the same shape
     compactColumns: 2,
     titleY: 250,         // group title baseline
     photoWidth: 0.36,    // share of a card's width taken by the photo (about the 4:5 crop shape)
@@ -222,7 +223,7 @@ export function cardRects(template, n, compact = false) {
   const areaW = template.width - L.side * 2;
   const areaH = L.cardsBottom - L.cardsTop;
   const w = (areaW - L.gap * (cols - 1)) / cols;
-  const h = Math.min(compact ? Infinity : L.maxCardHeight, (areaH - L.gap * (rows - 1)) / rows);
+  const h = Math.min(compact ? L.maxCompactCardHeight : L.maxCardHeight, (areaH - L.gap * (rows - 1)) / rows);
   const usedH = rows * h + (rows - 1) * L.gap;
   const top = L.cardsTop + (areaH - usedH) / 2;
   const rects = [];
