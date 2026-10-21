@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMemoryStore } from '../../js/storage.js';
-import { createBackup, parseBackup, planRestore, restoreBackup } from '../../js/backup.js';
+import { backupSummary, createBackup, parseBackup, planRestore, restoreBackup } from '../../js/backup.js';
 import { blobToDataUrl, dataUrlToBlob } from '../../js/blobs.js';
 import { normalizeCoach, normalizeMatch, normalizePlayer } from '../../js/model.js';
 
@@ -150,4 +150,11 @@ test('files that are not backups are refused with a clear message', () => {
   assert.throws(() => parseBackup('{"hello":1}'), /not a Matchday Lineup backup/);
   assert.throws(() => parseBackup(JSON.stringify({ app: 'matchday-lineup', version: 99, players: [] })), /newer version/);
   assert.throws(() => parseBackup(JSON.stringify({ app: 'matchday-lineup', version: 1 })), /no squad/);
+});
+
+test('the backup message counts matches too', () => {
+  assert.equal(backupSummary({ players: [1, 2], coaches: [1], matches: [1, 2, 3], photos: { a: '', b: '' } }),
+    'Backed up 2 players, 1 coach, 3 matches and 2 photos.');
+  assert.equal(backupSummary({ players: [1], coaches: [], matches: [1], photos: {} }),
+    'Backed up 1 player, 0 coaches, 1 match and 0 photos.');
 });

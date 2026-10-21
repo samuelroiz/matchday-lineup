@@ -59,7 +59,8 @@ export function layoutTeamSheet(sizeKey = 'post') {
     header: { x: S.pad, y: S.headerTop, w: innerW, h: S.headerH },
     cards,
     bench,
-    coaches: { x: S.pad, y: S.coachesY, w: innerW },
+    // With no replacements there's no box, so the coaches line moves up to where it would start.
+    coaches: { x: S.pad, y: S.coachesY, w: innerW, yNoBench: S.benchTop + 34 },
     footerY: S.footerY,
   };
 }
@@ -199,7 +200,8 @@ export function drawTeamSheet(ctx, sizeKey, data, st = SHEET_STYLE) {
     drawCard(ctx, L.cards[slot], slot, entry, st, data.photoStyle, leaderBadge(data.match, entry?.player?.id));
   }
   drawBench(ctx, L.bench, data, st);
-  drawCoachesLine(ctx, L.coaches, data, st);
+  const benchEmpty = !BENCH_SLOTS.some((slot) => data.slots[slot]?.player);
+  drawCoachesLine(ctx, { ...L.coaches, y: benchEmpty ? L.coaches.yNoBench : L.coaches.y }, data, st);
   ctx.fillStyle = 'rgba(242,183,5,0.85)';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';

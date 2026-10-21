@@ -147,3 +147,10 @@ export function describeRestore(r) {
   if (r.invalid) msg += ` Ignored ${r.invalid} unreadable entr${r.invalid === 1 ? 'y' : 'ies'}.`;
   return msg;
 }
+
+/** "Backed up 23 players, 2 coaches, 4 matches and 52 photos." */
+export function backupSummary(data) {
+  const n = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+  return `Backed up ${n(data.players.length, 'player', 'players')}, ${n(data.coaches.length, 'coach', 'coaches')}, `
+    + `${n(data.matches.length, 'match', 'matches')} and ${n(Object.keys(data.photos).length, 'photo', 'photos')}.`;
+}

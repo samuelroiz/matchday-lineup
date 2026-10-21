@@ -52,10 +52,16 @@ export const VIDEO_TEMPLATE = {
     compactCardSide: 60,
     compactGap: 40,
     maxCardHeight: 420,
+    // Groups of up to fewCards (locks, halves, centres, a short coaching team) have room to
+    // spare, so their cards are taller and the stats read on a phone.
+    fewCards: 2,
+    maxFewCardHeight: 540,
+    fewGap: 120,         // so the grown cards still stand well apart
     maxCompactCardHeight: 300, // a full bench's card height; a short bench keeps the same shape
     compactColumns: 2,
     titleY: 250,         // group title baseline
     photoWidth: 0.36,    // share of a card's width taken by the photo (about the 4:5 crop shape)
+    photoAspect: 0.8,    // ...but never narrower than 4:5 for the card's height (taller cards)
     compactPhotoWidth: 0.5,
     radius: 28,
     flipScale: 1.1,      // card size on the Fun side (1 = no growth)
@@ -66,10 +72,10 @@ export const VIDEO_TEMPLATE = {
     // Fun side: everything moves up to make room for the allowed stats.
     content: {
       serious: { numberY: 0.42, nameY: 0.68 },
-      fun: { numberY: 0.25, nameY: 0.43, nicknameY: 0.54, statsY: 0.7, statRow: 0.16 },
+      fun: { numberY: 0.24, nameY: 0.465, nicknameY: 0.565, statsY: 0.715, statRow: 0.15 },
       compactSerious: { numberY: 0.4, nameY: 0.66 },
       // Bench cards: height and weight only, one per line, as big as the name so they read on a phone.
-      compactFun: { numberY: 0.26, nameY: 0.46, nicknameY: 0.57, statsY: 0.74, statRow: 0.15, statSize: 0.12, stats: ['height', 'weight'] },
+      compactFun: { numberY: 0.26, nameY: 0.48, nicknameY: 0.585, statsY: 0.75, statRow: 0.15, statSize: 0.12, stats: ['height', 'weight'] },
       coach: { roleY: 0.38, nameY: 0.58 },
       numberSize: 0.25,
       nameSize: 0.12,
@@ -227,12 +233,14 @@ export function cardRects(template, n, compact = false) {
   const L = template.layout;
   const cols = compact ? L.compactColumns : 1;
   const side = compact ? L.compactCardSide : L.cardSide;
-  const gap = compact ? L.compactGap : L.gap;
+  const few = !compact && n <= (L.fewCards ?? 0);
+  const gap = compact ? L.compactGap : few ? L.fewGap : L.gap;
   const rows = Math.ceil(n / cols);
   const areaW = template.width - side * 2;
   const areaH = L.cardsBottom - L.cardsTop;
   const w = (areaW - gap * (cols - 1)) / cols;
-  const h = Math.min(compact ? L.maxCompactCardHeight : L.maxCardHeight, (areaH - gap * (rows - 1)) / rows);
+  const maxH = compact ? L.maxCompactCardHeight : few ? L.maxFewCardHeight : L.maxCardHeight;
+  const h = Math.min(maxH, (areaH - gap * (rows - 1)) / rows);
   const usedH = rows * h + (rows - 1) * gap;
   const top = L.cardsTop + (areaH - usedH) / 2;
   const rects = [];

@@ -94,7 +94,7 @@ export async function addCoach(qa, { name, role }, photo) {
   await page.waitForSelector('dialog[open] .coach-form');
   await page.type('dialog input[name=name]', name);
   await page.type('dialog input[name=role]', role);
-  await uploadPhoto(page, 'coach', photo, qa.problems, name);
+  if (photo) await uploadPhoto(page, 'coach', photo, qa.problems, name);
   await page.click('dialog [data-action=save]');
   await closed(page);
   log('added coach', name);

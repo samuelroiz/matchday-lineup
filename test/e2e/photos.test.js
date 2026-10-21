@@ -37,7 +37,7 @@ before(async () => {
     window.__texts = null;
     const orig = CanvasRenderingContext2D.prototype.fillText;
     CanvasRenderingContext2D.prototype.fillText = function (t, x, y, ...rest) {
-      if (window.__texts) window.__texts.push({ t: String(t), x, y, w: this.measureText(t).width, canvas: this.canvas.id });
+      if (window.__texts) window.__texts.push({ t: String(t), x, y, w: this.measureText(t).width, size: parseFloat(/([\d.]+)px/.exec(this.font)?.[1]), canvas: this.canvas.id });
       return orig.call(this, t, x, y, ...rest);
     };
   });
@@ -204,16 +204,19 @@ test('kick-off saves and shows on the team sheet', async () => {
   assert.ok(texts.some((t) => t.includes('Kick-off 2:30 PM')), texts.join(' | '));
 });
 
-test('a long name stays on one line on the team sheet', async () => {
+test('a long name on the team sheet becomes "C. RODRIGUEZ" on one line instead of shrinking', async () => {
   const card = await page.evaluate(async () => (await import('/js/teamsheet.js')).layoutTeamSheet('post').cards[1]);
   await page.evaluate(() => { window.__texts = []; });
   await page.click('input[name=sheet-size][value=story]');
   await page.click('input[name=sheet-size][value=post]');
   await page.waitForFunction(() => window.__texts.some((t) => t.t === 'RODRIGUEZ'));
   const texts = await page.evaluate(() => window.__texts.filter((t) => t.canvas === 'sheet-canvas'));
-  const first = texts.findLast((t) => t.t === 'Christopher');
+  assert.ok(!texts.some((t) => t.t === 'Christopher'), 'the full first name would shrink too far, so it is not used');
+  const first = texts.findLast((t) => t.t === 'C.');
   const last = texts.findLast((t) => t.t === 'RODRIGUEZ');
-  assert.ok(first && last, 'both parts of the name are drawn');
+  assert.ok(first && last, 'initial and surname are drawn');
+  const normal = card.h * 0.085; // the team sheet's name size
+  assert.ok(last.size >= normal * 0.8 - 1, `drawn at ${last.size}px, normal ${normal.toFixed(1)}px`);
   assert.equal(first.y, last.y, 'first name and surname share one line');
   assert.ok(first.x >= card.x && last.x + last.w <= card.x + card.w, `name spans ${first.x}..${last.x + last.w}, card ${card.x}..${card.x + card.w}`);
 });
@@ -233,7 +236,8 @@ test('a long name stays on one line in the video', async () => {
       return out.some((t) => t.t === 'RODRIGUEZ') ? out : [];
     }, v);
   }
-  const first = texts.find((t) => t.t === 'Christopher');
+  // Full first name when it fits at about the normal size, otherwise the initial.
+  const first = texts.find((t) => t.t === 'Christopher' || t.t === 'C.');
   const last = texts.find((t) => t.t === 'RODRIGUEZ');
   assert.ok(first && last, 'name drawn in the video');
   assert.equal(first.y, last.y, 'one line');

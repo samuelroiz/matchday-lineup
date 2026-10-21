@@ -120,15 +120,28 @@ export function fitNameSize(measure, first, last, maxWidth, size, { gapEm = 0.25
 }
 
 /**
- * Draw a player's name on one line, first name in one font/colour and SURNAME in another,
- * shrunk to fit. Returns { size, width }.
+ * fitNameSize, but a name that would have to shrink below shortenBelow × size (so it looks
+ * much smaller than its neighbours) drops to the first initial: "C. RODRIGUEZ".
+ * Returns { first, size } with first possibly shortened.
  */
-export function drawNameLine(ctx, { first, last, x, y, maxWidth, size, align = 'center', firstFont, lastFont, firstColor, lastColor }) {
+export function fitName(measure, first, last, maxWidth, size, { shortenBelow = 0.8 } = {}) {
+  const full = fitNameSize(measure, first, last, maxWidth, size);
+  if (!first || full >= size * shortenBelow) return { first, size: full };
+  const initial = `${[...first][0]}.`;
+  const short = fitNameSize(measure, initial, last, maxWidth, size);
+  return short > full ? { first: initial, size: short } : { first, size: full };
+}
+
+/**
+ * Draw a player's name on one line, first name in one font/colour and SURNAME in another,
+ * shrunk to fit (long first names become an initial, see fitName). Returns { size, width }.
+ */
+export function drawNameLine(ctx, { first: fullFirst, last, x, y, maxWidth, size, align = 'center', firstFont, lastFont, firstColor, lastColor }) {
   const measure = (t, s, part) => {
     ctx.font = (part === 'first' ? firstFont : lastFont)(s);
     return ctx.measureText(t).width;
   };
-  const s = fitNameSize(measure, first, last, maxWidth, size);
+  const { first, size: s } = fitName(measure, fullFirst, last, maxWidth, size);
   const fw = first ? measure(first, s, 'first') : 0;
   const gap = first ? 0.25 * s : 0;
   const lw = measure(last, s, 'last');

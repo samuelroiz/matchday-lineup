@@ -17,7 +17,7 @@ Everything stays in your browser. Players, photos and matches are saved in the b
    - To adjust a crop, **drag the photo** to move it and use the **Zoom** slider (or arrow keys and +/−). **Auto crop** goes back to the face-detected crop. The crop is used everywhere: squad cards, team sheet and video. The full photo is kept, so you can re-crop at any time.
 3. Under **Show in the video**, untick any stat a player would rather keep private (for example weight).
 4. **Photo style** (Squad tab toolbar) sets the look of every photo when it's drawn: **Off**, **Auto** (evens out brightness and colour between photos), or **Club grade** (Auto plus a subtle maroon and gold tone). Stored photos are never changed.
-5. Under **Coaches**, press **+ Add coach** for each member of the coaching team: name, role (Head coach, Forwards coach, … or type your own) and one photo, with the same auto crop and crop editor. Coaches are listed by role (Head coach, Assistant, Forwards, Backs, then the rest, with roles you typed yourself last), then by name, on the Squad tab, the team sheet and in the video.
+5. Under **Coaches**, press **+ Add coach** for each member of the coaching team: name, role (tap a suggestion such as Head coach or Forwards coach, or type your own) and one photo, with the same auto crop and crop editor. Coaches are listed by role (Head coach, Assistant, Forwards, Backs, then the rest, with roles you typed yourself last), then by name, on the Squad tab, the team sheet and in the video.
 6. Press **Back up squad** to save a JSON file of the whole squad, coaches and saved matches, photos included. Keep it somewhere safe. It's your only copy if the browser's data is cleared. **Restore…** loads a backup on any device. It only ever adds: players and matches already on the device are never overwritten.
 
 **Every week**
@@ -26,7 +26,7 @@ Everything stays in your browser. Players, photos and matches are saved in the b
 2. **Team sheet (tab 3):** choose Post or Story, check the preview, press **Download PNG**.
 3. **Video (tab 4):** press **▶ Preview** to watch it in the page, and adjust **Speed** (about 37–60 s) or **Photo change** (flip or crossfade). Then press **Export video**. Recording runs in real time, so a 55 s video takes about 55 s. Keep the tab open. **Cancel** stops it. When it's done, play it back and press **Download video**.
 
-The video runs: intro (logo, SFV vs opponent, date; fully drawn from the first frame, so Instagram uses it as the cover) → front row 1-2-3 → locks 4-5 → back row 6-7-8 → halves 9-10 → centres 12-13 → back three 11-14-15 → bench 16-23 → coaches → full team sheet, held for 3 s. Each player card slides in showing the Serious photo, shirt number, name and position. It then flips to the Fun photo, grows by 10%, shows the stats the player allows, and slides out with its group. Bench cards are smaller, so they show only height and weight, in large type. The captain and vice-captain carry a gold **C** / **VC** badge in the video and on the team sheet, and the team sheet lists the coaches under the replacements. Empty shirts are skipped, and so is the coaches group when nobody is ticked. On the team sheet, an empty starting shirt shows as TBC and empty replacement spots are left out.
+The video runs: intro (logo, SFV vs opponent, date; fully drawn from the first frame, so Instagram uses it as the cover) → front row 1-2-3 → locks 4-5 → back row 6-7-8 → halves 9-10 → centres 12-13 → back three 11-14-15 → bench 16-23 → coaches → full team sheet, held for 3 s. Each player card slides in showing the Serious photo, shirt number, name and position. It then flips to the Fun photo, grows by 10%, shows the stats the player allows, and slides out with its group. Groups of one or two (locks, halves, centres) get taller cards so the stats read on a phone. Bench cards are smaller, so they show only height and weight, in large type. A name that would have to shrink well below the others is shown as initial and surname ("C. RODRIGUEZ") at the normal size, on the team sheet and in the video. The captain and vice-captain carry a gold **C** / **VC** badge in the video and on the team sheet, and the team sheet lists the coaches under the replacements (or in their place when there are none). Empty shirts are skipped, and so is the coaches group when nobody is ticked. On the team sheet, an empty starting shirt shows as TBC and empty replacement spots are left out.
 
 **MP4 vs WebM:** Safari and recent Chrome/Edge (126+) record MP4, which Instagram accepts. Browsers that can only record WebM (some Firefox versions) produce a `.webm`, which you may need to convert before posting.
 
@@ -44,7 +44,7 @@ npm start            # serves http://127.0.0.1:8080/
 
 Any static file server works (for example `python3 -m http.server`). Opening `index.html` straight from disk (`file://`) won't work because browsers block ES modules there.
 
-Add `?clip=5` to the URL to export only the first 5 seconds of the video, which is handy for checking the export quickly.
+Add `?clip=5` to the URL to export only the first 5 seconds of the video, which is handy for checking the export quickly. The Video tab then shows the clip's length and a test-mode note.
 
 ## Tests
 
@@ -66,7 +66,8 @@ PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google
 
 ```sh
 npm run qa           # 23 players, 2 coaches, every tab, a full video export (about 2 min) and frames from it
-npm run qa:6         # 6 players, 1 coach, a part-filled match, video preview only -> qa/six-players/
+npm run qa:6         # 6 players, 2 coaches (one without a photo), a part-filled match, video preview only,
+                     # card layout before/after frames, phone-width preview and ?clip mode -> qa/six-players/
 ```
 
 ## Deploying on GitHub Pages

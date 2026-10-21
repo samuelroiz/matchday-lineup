@@ -202,3 +202,13 @@ test('grown cards still do not touch their neighbours', () => {
     }
   }
 });
+
+test('groups of one or two get taller cards than a group of three', () => {
+  const T = VIDEO_TEMPLATE;
+  const three = cardRects(T, 3, false)[0].h;
+  for (const n of [1, 2]) {
+    const h = cardRects(T, n, false)[0].h;
+    assert.equal(h, T.layout.maxFewCardHeight, `${n} cards`);
+    assert.ok(h > three * 1.3, `${n} cards: ${h} vs ${three}`);
+  }
+});

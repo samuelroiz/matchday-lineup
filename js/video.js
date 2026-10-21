@@ -206,7 +206,7 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
     ctx.fill();
     ctx.restore();
 
-    const pw = w * (compact ? L.compactPhotoWidth : L.photoWidth);
+    const pw = compact ? w * L.compactPhotoWidth : Math.max(w * L.photoWidth, h * (L.photoAspect ?? 0));
     ctx.save();
     roundRectPath(ctx, x, y, w, h, L.radius);
     ctx.clip();

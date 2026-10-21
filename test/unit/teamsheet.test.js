@@ -29,6 +29,7 @@ for (const size of Object.keys(TEAM_SHEET_SIZES)) {
     }
     assert.ok(L.coaches.y > L.bench.y + L.bench.h + 20, 'coaches line sits under the replacements');
     assert.ok(L.footerY > L.coaches.y + 20 && L.footerY < L.height);
+    assert.ok(L.coaches.yNoBench > L.bench.y && L.coaches.yNoBench < L.coaches.y - 100, 'with no bench the coaches line moves up');
   });
 }
 

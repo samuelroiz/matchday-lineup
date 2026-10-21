@@ -107,6 +107,22 @@ test('coaches are added on the Squad tab with a cropped photo, and saved', async
   ]);
 });
 
+test('a coach without a photo has no "Photo" label, and role buttons fill in the role', async () => {
+  const captions = await page.$$eval('.coach-card', (els) => els.map((c) => c.querySelector('figcaption')?.textContent ?? null));
+  assert.deepEqual(captions, ['Photo', null]);
+
+  // Role suggestions are buttons, not a <datalist> popup that eats the first click on Save.
+  await page.click('#add-coach');
+  await page.waitForSelector('dialog[open] .coach-form');
+  assert.equal(await page.$('dialog datalist'), null);
+  await page.type('dialog input[name=name]', 'Lee Park');
+  await page.click('dialog [data-role-chips] button[value="Backs coach"]');
+  assert.equal(await page.$eval('dialog input[name=role]', (i) => i.value), 'Backs coach');
+  assert.equal(await page.$eval('dialog [data-role-chips] button[value="Backs coach"]', (b) => b.getAttribute('aria-pressed')), 'true');
+  await page.click('dialog [data-action=cancel]');
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+});
+
 const storedMatch = () => page.evaluate(async () => {
   const { openStore } = await import('/js/storage.js');
   return (await (await openStore()).getAll('matches'))[0];

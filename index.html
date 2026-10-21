@@ -145,7 +145,14 @@
     <!-- Video -->
     <section id="tab-video" role="tabpanel" aria-labelledby="tab-btn-video" class="panel" hidden>
       <div class="video-layout">
-        <div class="canvas-stage tall"><canvas id="video-canvas" width="1080" height="1920" aria-label="Lineup video preview"></canvas></div>
+        <div class="video-preview" id="video-preview">
+          <div class="player-controls">
+            <button type="button" class="btn" id="video-play">▶ Preview</button>
+            <input type="range" id="video-scrub" min="0" max="1000" value="0" aria-label="Preview position">
+            <span id="video-time" class="mono">0:00</span>
+          </div>
+          <div class="canvas-stage tall"><canvas id="video-canvas" width="1080" height="1920" aria-label="Lineup video preview"></canvas></div>
+        </div>
         <div class="video-side">
           <p class="hint" id="video-note"></p>
           <div class="field-row">
@@ -158,11 +165,6 @@
             </label>
           </div>
           <p class="hint" id="video-length"></p>
-          <div class="player-controls">
-            <button type="button" class="btn" id="video-play">▶ Preview</button>
-            <input type="range" id="video-scrub" min="0" max="1000" value="0" aria-label="Preview position">
-            <span id="video-time" class="mono">0:00</span>
-          </div>
           <button type="button" class="btn btn-primary btn-wide" id="video-export">Export video</button>
           <div id="video-progress" class="progress-wrap" hidden>
             <progress id="video-progress-bar" max="1" value="0"></progress>
@@ -184,9 +186,11 @@
     <form class="player-form coach-form" novalidate>
       <div class="field-grid">
         <label class="field">Name <input name="name" maxlength="61" required autocomplete="off"><small class="err" data-for="name"></small></label>
-        <label class="field">Role <input name="role" maxlength="41" list="coach-roles" autocomplete="off" placeholder="e.g. Head coach"><small class="err" data-for="role"></small></label>
+        <div class="field"><label for="coach-role">Role</label><input name="role" id="coach-role" maxlength="41" autocomplete="off" placeholder="e.g. Head coach">
+          <div class="role-chips" data-role-chips aria-label="Common roles"></div>
+          <small class="err" data-for="role"></small>
+        </div>
       </div>
-      <datalist id="coach-roles"></datalist>
       <div class="photo-pickers single"></div>
       <small class="err" data-for="photo"></small>
     </form>

@@ -8,7 +8,7 @@ import {
   COACH_ROLES, compareCoaches, leaderBadge, normalizeCoach, removeCoachFromMatch, setLeader, syncLeaders, validateCoach,
 } from './model.js';
 import { openStore } from './storage.js';
-import { createBackup, describeRestore, restoreBackup } from './backup.js';
+import { backupSummary, createBackup, describeRestore, restoreBackup } from './backup.js';
 import { forgetPhoto, loadImage, photoImage, resizeImage } from './images.js';
 import { createPhotoPicker } from './cropeditor.js';
 import { drawPhoto } from './photodraw.js';
@@ -119,10 +119,13 @@ function statsList(p) {
 }
 
 const THUMB_W = 320;
-function photoFigure(id, crop, label, name) {
+// showLabel 'always' (player cards, so Serious and Fun stay told apart) or 'with-photo'.
+function photoFigure(id, crop, label, name, showLabel = 'always') {
   const canvas = el('canvas', { width: String(THUMB_W), height: String(Math.round(THUMB_W / CROP_ASPECT)), role: 'img', 'aria-label': `${label} photo of ${name}`, hidden: true });
-  const fig = el('figure', { class: 'card-photo' }, el('span', { class: 'photo-empty' }, 'No photo'), canvas, el('figcaption', {}, label));
-  if (id) {
+  const caption = id || showLabel === 'always' ? el('figcaption', {}, label) : null;
+  const fig = el('figure', { class: 'card-photo' }, el('span', { class: 'photo-empty' }, 'No photo'), canvas, caption);
+  if (!id) canvas.dataset.rendered = 'none';
+  else {
     photoImage(state.store, id).then((img) => {
       if (!img) return;
       drawPhoto(canvas.getContext('2d'), { img, crop }, 0, 0, canvas.width, canvas.height, state.settings.photoStyle);
@@ -289,7 +292,7 @@ async function openPlayerForm(existing = null) {
 function renderCoaches() {
   const coaches = [...state.coaches].sort(compareCoaches);
   $('#coach-list').replaceChildren(...coaches.map((c) => el('article', { class: 'player-card coach-card', dataset: { id: c.id } },
-    el('div', { class: 'card-photos' }, photoFigure(c.photo, c.crop, 'Photo', c.name)),
+    el('div', { class: 'card-photos' }, photoFigure(c.photo, c.crop, 'Photo', c.name, 'with-photo')),
     el('div', { class: 'card-info' }, el('h3', {}, c.name), el('p', { class: 'role' }, c.role || 'Coach')),
     el('div', { class: 'card-actions' },
       el('button', { type: 'button', class: 'btn btn-small', onclick: () => openCoachForm(c) }, 'Edit'),
@@ -301,9 +304,18 @@ async function openCoachForm(existing = null) {
   const form = $('#coach-form-tpl').content.firstElementChild.cloneNode(true);
   form.elements.name.value = existing?.name || '';
   form.elements.role.value = existing?.role || '';
-  $('datalist', form).id = 'coach-roles-list';
-  form.elements.role.setAttribute('list', 'coach-roles-list');
-  $('datalist', form).replaceChildren(...COACH_ROLES.map((r) => el('option', { value: r })));
+  // Plain buttons rather than a <datalist>: an open suggestion list swallows the first
+  // click on Save, so the coach only saved on the second click.
+  const roleInput = form.elements.role;
+  const markRole = () => {
+    for (const b of $$('[data-role-chips] button', form)) b.setAttribute('aria-pressed', String(b.value.toLowerCase() === roleInput.value.trim().toLowerCase()));
+  };
+  $('[data-role-chips]', form).replaceChildren(...COACH_ROLES.map((r) => el('button', {
+    type: 'button', class: 'chip-btn', value: r,
+    onclick: () => { roleInput.value = r; markRole(); },
+  }, r)));
+  roleInput.addEventListener('input', markRole);
+  markRole();
   const img = existing?.photo ? await photoImage(state.store, existing.photo) : null;
   const picker = createPhotoPicker({
     label: 'Photo', kind: 'coach',
@@ -396,7 +408,7 @@ async function backupSquad() {
     const data = await createBackup(state.store);
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     download(blob, `sfv-squad-backup-${new Date().toISOString().slice(0, 10)}.json`);
-    toast(`Backed up ${data.players.length} players, ${data.coaches.length} coaches and ${Object.keys(data.photos).length} photos.`, { type: 'success' });
+    toast(backupSummary(data), { type: 'success' });
   } catch (e) {
     toast(`Backup failed: ${e.message}`, { type: 'error' });
   }
@@ -803,7 +815,8 @@ async function prepareVideo() {
   await flushMatchSave();
   state.video?.player.pause();
   const m = activeMatch();
-  setNote($('#video-note'), m, CLIP_SECONDS ? [`Test mode: exports only the first ${CLIP_SECONDS} s.`] : []);
+  setNote($('#video-note'), m);
+  if (CLIP_SECONDS) $('#video-note').append(el('span', { class: 'note-line' }, `Test mode (?clip=${CLIP_SECONDS}): exports only the first ${CLIP_SECONDS} s.`));
   $('#video-export').disabled = !m;
   $('#video-play').disabled = !m;
   const canvas = $('#video-canvas');
@@ -814,7 +827,10 @@ async function prepareVideo() {
   const template = videoTemplate();
   const timeline = buildTimeline(template, { speed: state.settings.speed, selection: m.selection, coaches: onDuty(m).map((c) => c.id) });
   const renderer = createVideoRenderer(data, timeline, template);
-  $('#video-length').textContent = `Length ${fmtTime(timeline.duration)} · ${timeline.segments.filter((s) => s.type === 'group').length} groups`;
+  const clipped = CLIP_SECONDS > 0 && CLIP_SECONDS < timeline.duration;
+  $('#video-length').textContent = clipped
+    ? `Length ${fmtTime(CLIP_SECONDS)} (test clip)`
+    : `Length ${fmtTime(timeline.duration)} · ${timeline.segments.filter((s) => s.type === 'group').length} groups`;
   const player = createPreviewPlayer(canvas, renderer, timeline, {
     onTime: (t) => {
       $('#video-scrub').value = String(Math.round((t / timeline.duration) * 1000));
@@ -829,7 +845,12 @@ async function prepareVideo() {
 function togglePreview() {
   const v = state.video;
   if (!v) return;
-  if (v.player.playing) { v.player.pause(); $('#video-play').textContent = '▶ Preview'; } else { v.player.play(); $('#video-play').textContent = '❚❚ Pause'; }
+  if (v.player.playing) { v.player.pause(); $('#video-play').textContent = '▶ Preview'; return; }
+  v.player.play();
+  $('#video-play').textContent = '❚❚ Pause';
+  // Bring the player into view if it has scrolled off (the controls sit above it on phones).
+  const r = $('#video-canvas').getBoundingClientRect();
+  if (r.top < 0 || r.bottom > innerHeight) $('#video-preview').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function setExportingUi(on) {
@@ -870,6 +891,9 @@ async function exportVideo() {
       ? `MP4 · ${(result.blob.size / 1e6).toFixed(1)} MB · ready for Instagram.`
       : `WebM · ${(result.blob.size / 1e6).toFixed(1)} MB. This browser can't record MP4; Instagram may need it converted. Chrome 126+ and Safari record MP4.`;
     $('#video-result').hidden = false;
+    // Scroll so the finished video and its Download button are on screen.
+    $('#video-result').scrollIntoView({ behavior: 'smooth', block: 'end' });
+    link.focus({ preventScroll: true });
     toast('Video ready.', { type: 'success' });
   } catch (e) {
     if (e?.name === 'AbortError') toast('Video export cancelled.');

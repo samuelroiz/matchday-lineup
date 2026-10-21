@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyGrade, buildGrade, photoStats } from '../../js/photostyle.js';
-import { fitNameSize } from '../../js/draw.js';
+import { fitName, fitNameSize } from '../../js/draw.js';
 import { fixtureLine } from '../../js/teamsheet.js';
 import { KICKOFF_TIMES, normalizeMatch } from '../../js/model.js';
 
@@ -62,6 +62,15 @@ test('long names shrink to fit one line instead of wrapping', () => {
   assert.ok(width <= maxWidth, `width ${width}`);
   assert.ok(size < 22 && size > 10, `size ${size}`);
   assert.equal(fitNameSize(measure, 'Bo', 'KIM', maxWidth, 22), 22, 'short names keep the full size');
+});
+
+test('a name that would shrink a lot uses the first initial at a normal size', () => {
+  const measure = (t, s) => t.length * s * 0.55;
+  const long = fitName(measure, 'Christopher', 'RODRIGUEZ', 174, 22);
+  assert.equal(long.first, 'C.');
+  assert.ok(long.size >= 22 * 0.8, `size ${long.size}`);
+  assert.deepEqual(fitName(measure, 'Mateo', 'ALVAREZ', 174, 22), { first: 'Mateo', size: 22 }, 'names that fit stay in full');
+  assert.equal(fitName(measure, '', 'RODRIGUEZ', 174, 22).first, '', 'a single name has no initial to use');
 });
 
 test('the team sheet fixture line includes the kick-off time', () => {
