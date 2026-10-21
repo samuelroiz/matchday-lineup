@@ -191,6 +191,28 @@ test('render a short lineup video', async () => {
   console.log(`  video: ${type}, ${buf.length} bytes`);
 });
 
+/** True once the loaded video and the Download button are both fully on screen, below the sticky tabs. */
+const resultInView = () => page.waitForFunction(() => {
+  const video = document.querySelector('#video-output');
+  if (video.readyState < 1) return false;
+  const top = document.querySelector('.tabs').getBoundingClientRect().bottom;
+  const v = video.getBoundingClientRect();
+  const link = document.querySelector('#video-link').getBoundingClientRect();
+  return v.height > 200 && v.top >= top - 1 && link.bottom <= innerHeight + 1;
+}, { timeout: 8000 });
+
+test('after an export the whole video and the Download button are in view', async () => {
+  // Desktop: the export above already finished and scrolled.
+  await resultInView();
+  // Phone width, starting from the top of the page.
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.click('#video-export');
+  await page.waitForSelector('#video-result:not([hidden])', { timeout: (CLIP + 20) * 1000 });
+  await resultInView();
+  await page.setViewport({ width: 1400, height: 1000 });
+});
+
 test('everything is still there after a reload', async () => {
   await page.goto(`${base}#squad`);
   await page.waitForSelector('html[data-ready="true"]');

@@ -891,8 +891,7 @@ async function exportVideo() {
       ? `MP4 · ${(result.blob.size / 1e6).toFixed(1)} MB · ready for Instagram.`
       : `WebM · ${(result.blob.size / 1e6).toFixed(1)} MB. This browser can't record MP4; Instagram may need it converted. Chrome 126+ and Safari record MP4.`;
     $('#video-result').hidden = false;
-    // Scroll so the finished video and its Download button are on screen.
-    $('#video-result').scrollIntoView({ behavior: 'smooth', block: 'end' });
+    scrollToResult(out);
     link.focus({ preventScroll: true });
     toast('Video ready.', { type: 'success' });
   } catch (e) {
@@ -905,6 +904,30 @@ async function exportVideo() {
     label.textContent = '0%';
     v.player.seek(0);
   }
+}
+
+/**
+ * Bring the finished video and its Download button on screen. Waits for the video's
+ * metadata first: until then the player has no height, and scrolling early leaves its
+ * bottom and the button below the fold once it grows.
+ */
+function scrollToResult(video) {
+  let done = false;
+  const go = () => {
+    if (done) return;
+    done = true;
+    requestAnimationFrame(() => {
+      const box = $('#video-result');
+      const tabs = $('.tabs').getBoundingClientRect().bottom;
+      // If it all fits under the sticky tabs, line up its bottom; otherwise its top.
+      const fits = box.getBoundingClientRect().height + tabs <= innerHeight;
+      box.scrollIntoView({ behavior: 'smooth', block: fits ? 'end' : 'start' });
+    });
+  };
+  if (video.readyState >= 1) { go(); return; }
+  video.addEventListener('loadedmetadata', go, { once: true });
+  video.addEventListener('error', go, { once: true });
+  setTimeout(go, 3000); // don't leave the result off screen if neither event comes
 }
 
 function bindVideo() {
