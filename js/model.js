@@ -347,6 +347,76 @@ export function countPicked(selection = {}, slots = ALL_SLOTS) {
   return slots.filter((s) => selection[s]).length;
 }
 
+/**
+ * Replacements packed into 16, 17, 18... in the order they were picked, with no gaps.
+ * Returns a new selection; starters are untouched.
+ */
+export function packBench(selection = {}) {
+  const picked = BENCH_SLOTS.map((s) => selection[s]).filter(Boolean);
+  const out = { ...selection };
+  BENCH_SLOTS.forEach((s, i) => { out[s] = picked[i] || null; });
+  return out;
+}
+
+/** How well a player suits a shirt: lower is better, null if none of their positions fit. */
+function fitScore(player, slot) {
+  const suits = SLOT_POSITIONS[slot] || [];
+  let best = null;
+  player.positions.forEach((pos, i) => {
+    const j = suits.indexOf(pos);
+    // The shirt's main position first, then the player's main position, then specialists
+    // ahead of players who cover many positions (they can fill a gap elsewhere).
+    if (j >= 0) best = Math.min(best ?? Infinity, j * 4 + i * 2 + (player.positions.length - 1) * 0.5);
+  });
+  return best;
+}
+
+/**
+ * Fill empty shirts from the squad by usual positions, leaving shirts already picked alone.
+ * Starters first, the hardest shirt to fill first each time, so a lone hooker isn't spent on
+ * the bench. Then the bench by position, then anyone left over, packed from 16.
+ * Returns { selection, added: number of players picked, empty: [starter shirts still empty] }.
+ */
+export function autoPick(selection = {}, players = []) {
+  const known = new Map(players.map((p) => [p.id, p]));
+  const out = { ...emptySelection(), ...selection };
+  for (const s of ALL_SLOTS) if (out[s] && !known.has(out[s])) out[s] = null;
+  const used = new Set(ALL_SLOTS.map((s) => out[s]).filter(Boolean));
+  const byName = [...players].sort((a, b) => a.name.localeCompare(b.name));
+  let added = 0;
+
+  const fillByPosition = (slots) => {
+    let open = slots.filter((s) => !out[s]);
+    for (;;) {
+      const options = open.map((slot) => ({
+        slot,
+        candidates: byName.filter((p) => !used.has(p.id) && fitScore(p, slot) !== null)
+          .sort((a, b) => fitScore(a, slot) - fitScore(b, slot)),
+      })).filter((o) => o.candidates.length);
+      if (!options.length) return;
+      options.sort((a, b) => a.candidates.length - b.candidates.length || a.slot - b.slot);
+      const { slot, candidates: [pick] } = options[0];
+      out[slot] = pick.id;
+      used.add(pick.id);
+      added++;
+      open = open.filter((s) => s !== slot);
+    }
+  };
+
+  fillByPosition(STARTER_SLOTS);
+  fillByPosition(BENCH_SLOTS);
+  for (const s of BENCH_SLOTS) {
+    if (out[s]) continue;
+    const p = byName.find((x) => !used.has(x.id));
+    if (!p) break;
+    out[s] = p.id;
+    used.add(p.id);
+    added++;
+  }
+  const packed = packBench(out);
+  return { selection: packed, added, empty: STARTER_SLOTS.filter((s) => !packed[s]) };
+}
+
 /** Start next week's match from this one: same selection, new id, fresh fixture details. */
 export function copyMatch(m) {
   return normalizeMatch({

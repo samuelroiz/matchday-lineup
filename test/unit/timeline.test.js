@@ -176,12 +176,16 @@ test('stats stay hidden on the Serious side; the card grows and shows them on th
   const tl = buildTimeline(VIDEO_TEMPLATE, { selection: fullSelection });
   const c = tl.segments[1].cards[0];
   const serious = cardLook(VIDEO_TEMPLATE, cardState(c, (c.inEnd + c.flipStart) / 2));
-  assert.deepEqual(serious, { scale: 1, layout: 0, statsAlpha: 0, showFun: false });
+  assert.deepEqual(serious, { scale: 1, layout: 0, statsAlpha: 0, showFun: false, funAlpha: 0 });
   const early = cardLook(VIDEO_TEMPLATE, cardState(c, c.flipStart + (c.flipEnd - c.flipStart) * 0.3));
   assert.equal(early.statsAlpha, 0, 'no stats while the Serious side is still turning');
+  assert.equal(early.funAlpha, 0, 'a crossfade has not started showing the Fun photo either');
   assert.ok(early.scale > 1);
   const fun = cardLook(VIDEO_TEMPLATE, cardState(c, (c.flipEnd + c.outStart) / 2));
-  assert.deepEqual(fun, { scale: VIDEO_TEMPLATE.layout.flipScale, layout: 1, statsAlpha: 1, showFun: true });
+  assert.deepEqual(fun, { scale: VIDEO_TEMPLATE.layout.flipScale, layout: 1, statsAlpha: 1, showFun: true, funAlpha: 1 });
+  const late = cardLook(VIDEO_TEMPLATE, cardState(c, c.flipStart + (c.flipEnd - c.flipStart) * 0.7));
+  assert.ok(late.statsAlpha > 0 && late.statsAlpha < 1);
+  assert.equal(late.funAlpha, late.statsAlpha, 'crossfade: the Fun photo and the stats fade in together');
   // Leaves at full size with the group.
   assert.equal(cardLook(VIDEO_TEMPLATE, cardState(c, c.outStart + 0.1)).scale, VIDEO_TEMPLATE.layout.flipScale);
   assert.equal(cardLook(VIDEO_TEMPLATE, cardState(c, c.flipEnd), true).scale, VIDEO_TEMPLATE.layout.compactFlipScale);

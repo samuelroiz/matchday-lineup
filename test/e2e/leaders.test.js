@@ -128,7 +128,7 @@ const storedMatch = () => page.evaluate(async () => {
   return (await (await openStore()).getAll('matches'))[0];
 });
 const tags = () => page.$$eval('.slot .leader-tag', (els) => els.map((e) => `${e.closest('.slot').dataset.slot}:${e.textContent}`));
-const saved = () => page.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved');
+const saved = () => page.waitForFunction(() => document.querySelector('#save-status').dataset.state === 'saved');
 
 test('one captain and one vice-captain per match, and coaches on duty', async () => {
   await page.click('[data-tab=match]');

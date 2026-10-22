@@ -127,13 +127,14 @@ test('pick a match, with a warning when a player is picked twice', async () => {
   await page.select('select[data-slot="1"]', ids['Alex Ortega']);
   await page.select('select[data-slot="2"]', ids['Bo Tanaka']);
   await page.select('select[data-slot="3"]', ids['Chris Mbeki']);
+  // Picked into 17 with 16 empty, so the bench packs him into 16.
   await page.select('select[data-slot="17"]', ids['Alex Ortega']);
   await page.waitForSelector('#dup-warning:not([hidden])');
-  assert.match(await page.$eval('#dup-warning', (e) => e.textContent), /Alex Ortega is picked twice: shirts 1 and 17/);
-  await page.select('select[data-slot="17"]', '');
+  assert.match(await page.$eval('#dup-warning', (e) => e.textContent), /Alex Ortega is picked twice: shirts 1 and 16/);
+  await page.select('select[data-slot="16"]', '');
   await page.waitForSelector('#dup-warning[hidden]');
 
-  await page.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved');
+  await page.waitForFunction(() => document.querySelector('#save-status').dataset.state === 'saved');
   assert.match(await page.$eval('#match-list', (e) => e.textContent), /vs Santa Monica/);
   assert.equal(await page.$eval('#xv-count', (e) => e.textContent), '3/15');
 });
@@ -144,7 +145,7 @@ test('copy the match for next week keeps the selection', async () => {
   assert.equal(await page.$eval('#m-opponent', (e) => e.value), '');
   assert.equal(await page.$eval('#xv-count', (e) => e.textContent), '3/15');
   await page.type('#m-opponent', 'Belmont Shore');
-  await page.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved');
+  await page.waitForFunction(() => document.querySelector('#save-status').dataset.state === 'saved');
 });
 
 test('export a team sheet PNG at post and story size', async () => {

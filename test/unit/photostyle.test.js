@@ -53,6 +53,25 @@ test('Club grade adds a warm maroon/gold tone compared with Auto', () => {
   assert.ok(mean(c, 0) - mean(c, 2) > mean(a, 0) - mean(a, 2) + 5, 'red leans above blue');
 });
 
+test('each style changes an ordinary, well-exposed photo enough to notice', () => {
+  // A mid-tone photo with a full range of shades and some colour: the case where the old
+  // grades barely moved the pixels.
+  const n = 32;
+  const base = new Uint8ClampedArray(n * n * 4);
+  for (let i = 0; i < n * n; i++) {
+    const x = (i % n) / n;
+    const y = Math.floor(i / n) / n;
+    base.set([30 + 200 * x, 40 + 150 * y, 60 + 120 * (1 - x), 255], i * 4);
+  }
+  const graded = (style) => { const d = new Uint8ClampedArray(base); applyGrade(d, buildGrade(photoStats(d), style)); return d; };
+  const diff = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) for (let c = 0; c < 3; c++) s += Math.abs(a[i + c] - b[i + c]); return s / (a.length * 0.75); };
+  const looks = { off: base, auto: graded('auto'), club: graded('club') };
+  for (const [a, b] of [['off', 'auto'], ['auto', 'club'], ['off', 'club']]) {
+    const d = diff(looks[a], looks[b]);
+    assert.ok(d >= 12, `${a} vs ${b}: average change ${d.toFixed(1)} of 255`);
+  }
+});
+
 test('long names shrink to fit one line instead of wrapping', () => {
   // Stand-in for measureText: every character is 0.55 em wide.
   const measure = (t, s) => t.length * s * 0.55;

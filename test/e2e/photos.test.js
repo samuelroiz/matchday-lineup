@@ -169,15 +169,26 @@ test('photo style changes the look, never the stored photo', async () => {
     const digests = await Promise.all(bufs.map((b) => crypto.subtle.digest('SHA-256', b)));
     return digests.map((d) => [...new Uint8Array(d)].join(',')).sort().join('|');
   });
-  const pixel = () => page.$eval('.player-card canvas[data-rendered]', (c) => [...c.getContext('2d').getImageData(160, 300, 1, 1).data].join(','));
+  // Every pixel of the first card photo, plus a mark on the node to prove it isn't rebuilt.
+  const grab = () => page.$eval('.player-card canvas[data-rendered]', (c) => {
+    c.dataset.same ??= 'yes';
+    return { style: c.dataset.style, same: c.dataset.same, px: [...c.getContext('2d').getImageData(0, 0, c.width, c.height).data] };
+  });
+  const diff = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) for (let j = 0; j < 3; j++) s += Math.abs(a[i + j] - b[i + j]); return s / (a.length * 0.75); };
   const before = await hash();
-  const looks = new Set();
+  const looks = {};
+  await grab();
   for (const style of ['off', 'auto', 'club']) {
     await page.select('#photo-style', style);
-    await page.waitForFunction(() => document.querySelectorAll('.player-card canvas[data-rendered]').length === 2);
-    looks.add(await pixel());
+    // Repainted in the change handler itself: no waiting, same canvas.
+    looks[style] = await grab();
+    assert.equal(looks[style].style, style, `cards show ${style} straight away`);
+    assert.equal(looks[style].same, 'yes', 'the card is repainted in place, not rebuilt');
   }
-  assert.equal(looks.size, 3, 'each style draws differently');
+  for (const [a, b] of [['off', 'auto'], ['auto', 'club'], ['off', 'club']]) {
+    const d = diff(looks[a].px, looks[b].px);
+    assert.ok(d > 8, `${a} vs ${b}: average change ${d.toFixed(1)} of 255 is too subtle to notice`);
+  }
   assert.equal(await hash(), before, 'stored photos are byte-for-byte unchanged');
 });
 
@@ -189,7 +200,7 @@ test('kick-off saves and shows on the team sheet', async () => {
   await page.type('#m-opponent', 'Santa Monica');
   await page.select('select[data-slot="1"]', p.id);
   await page.select('#m-kickoff', '14:30');
-  await page.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved');
+  await page.waitForFunction(() => document.querySelector('#save-status').dataset.state === 'saved');
 
   await page.reload();
   await page.waitForSelector('html[data-ready="true"]');

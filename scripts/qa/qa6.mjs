@@ -1,5 +1,5 @@
-// Visual QA, small squad: 6 players, 2 coaches (one without a photo), a part-filled match,
-// the crop editor, both team sheets (and one with no bench), the video preview (no export),
+// Visual QA, small squad: 6 players, 2 coaches (one without a photo), the three photo styles,
+// a part-filled match, toast placement (desktop and phone), the crop editor, both team sheets (and one with no bench), the video preview (no export),
 // before/after frames of the card layout and the ?clip test mode.   npm run qa:6  ->  qa/six-players/
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -46,6 +46,12 @@ await addCoach(qa, { name: 'Grant Whitaker', role: 'Forwards coach' }, null); //
 await waitSquadRendered(page);
 await settle(4500); // let the "added" toasts clear
 await qa.shot('03-squad', { fullPage: true });
+// Photo styles: the cards repaint straight away, and each style should look clearly different.
+for (const style of ['off', 'auto', 'club']) {
+  await page.select('#photo-style', style);
+  await qa.shotEl(`03a-squad-style-${style}`, '#player-list');
+}
+await page.select('#photo-style', 'auto');
 
 // Re-crop and save, so the save path is exercised too.
 const crops = await cropEditorPass(qa, 'Christopher Rodriguez', '04', { save: true });
@@ -56,12 +62,20 @@ await createMatch(qa, {
   picks: SQUAD.map((p) => [p.shirt, p.name]), captain: 'Christopher Rodriguez', vice: 'Ethan Hughes',
 });
 await qa.shot('05-match', { fullPage: true });
+// A toast sits in the tab bar beside the tabs, over nothing, desktop and phone.
+await page.evaluate(async () => (await import('/js/dialog.js')).toast('Picked 9 players. Shirts 4, 5, 6 left empty: nobody plays there.', { type: 'success' }));
+await qa.shot('05a-toast-desktop');
+await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+await page.evaluate(async () => (await import('/js/dialog.js')).toast('Saved Mateo Alvarez.', { type: 'success' }));
+await qa.shot('05b-toast-phone');
+await page.setViewport({ width: 1400, height: 1000 });
+await settle(4500);
 notes.sheetNote = await teamSheets(qa, '06');
 
 // No replacements: the coaches line should move up into the bench's place.
 await page.click('[data-tab=match]');
 await page.select('select[data-slot="16"]', '');
-await page.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved');
+await page.waitForFunction(() => document.querySelector('#save-status').dataset.state === 'saved');
 await page.click('[data-tab=sheet]');
 for (const size of ['post', 'story']) {
   await page.click(`input[name=sheet-size][value=${size}]`);
@@ -73,7 +87,7 @@ await page.click('input[name=sheet-size][value=post]');
 await page.click('[data-tab=match]');
 const brennan = await page.$eval('select[data-slot="16"]', (s) => [...s.options].find((o) => o.textContent.startsWith('Tom Brennan')).value);
 await page.select('select[data-slot="16"]', brennan);
-await page.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved');
+await page.waitForFunction(() => document.querySelector('#save-status').dataset.state === 'saved');
 
 // ---------- video preview ----------
 await page.click('[data-tab=video]');

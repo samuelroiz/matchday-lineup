@@ -8,14 +8,16 @@ export const PHOTO_STYLES = [
 ];
 
 export const STYLE_SETTINGS = {
-  // Auto: stretch levels (ignoring the darkest/brightest 0.5%), balance colour, even brightness.
-  auto: { clip: 0.005, levelStrength: 0.6, maxWbGain: 0.12, targetLuma: 0.5, gammaRange: [0.78, 1.3] },
-  // Club grade: Auto, then shadows toward maroon and highlights toward gold, slightly muted.
-  club: { shadow: [122, 31, 43], highlight: [242, 183, 5], toneStrength: 0.14, desaturate: 0.12 },
+  // Auto: stretch levels (ignoring the darkest/brightest 0.5%), balance colour, even brightness,
+  // then a little extra contrast and colour so the change is easy to see on a phone.
+  auto: { clip: 0.005, levelStrength: 0.85, maxWbGain: 0.15, targetLuma: 0.5, gammaRange: [0.75, 1.35], contrast: 0.45, saturation: 1.3 },
+  // Club grade: Auto, then muted colour with shadows toward maroon and highlights toward gold.
+  club: { shadow: [122, 31, 43], highlight: [242, 183, 5], toneStrength: 0.28, desaturate: 0.35 },
 };
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+const smoothstep = (x) => x * x * (3 - 2 * x);
 
 /** Per-channel low/high percentiles and means of an RGBA buffer. */
 export function photoStats(data, clip = STYLE_SETTINGS.auto.clip) {
@@ -64,10 +66,13 @@ export function buildGrade(stats, style) {
   const gamma = clamp(Math.log(A.targetLuma) / Math.log(clamp(meanLuma, 0.02, 0.98)), ...A.gammaRange);
   const out = luts.map((lut) => {
     const u8 = new Uint8ClampedArray(256);
-    for (let v = 0; v < 256; v++) u8[v] = Math.round(255 * lut[v] ** gamma);
+    for (let v = 0; v < 256; v++) {
+      const x = lut[v] ** gamma;
+      u8[v] = Math.round(255 * (x + (smoothstep(x) - x) * A.contrast)); // gentle S-curve
+    }
     return u8;
   });
-  return { luts: out, tone: style === 'club' ? STYLE_SETTINGS.club : null };
+  return { luts: out, saturation: A.saturation, tone: style === 'club' ? STYLE_SETTINGS.club : null };
 }
 
 /** Apply a grade to an RGBA buffer in place. */
@@ -75,16 +80,18 @@ export function applyGrade(data, grade) {
   if (!grade) return data;
   const [lr, lg, lb] = grade.luts;
   const t = grade.tone;
+  // Auto lifts colour; Club grade mutes it instead, before the split-tone.
+  const sat = t ? 1 - t.desaturate : grade.saturation ?? 1;
   for (let i = 0; i < data.length; i += 4) {
     let r = lr[data[i]];
     let g = lg[data[i + 1]];
     let b = lb[data[i + 2]];
+    const l = luma(r, g, b);
+    r = l + (r - l) * sat;
+    g = l + (g - l) * sat;
+    b = l + (b - l) * sat;
     if (t) {
-      const l = luma(r, g, b);
-      // Mute colour a touch, then split-tone: dark areas lean maroon, bright areas lean gold.
-      r += (l - r) * t.desaturate;
-      g += (l - g) * t.desaturate;
-      b += (l - b) * t.desaturate;
+      // Split-tone: dark areas lean maroon, bright areas lean gold.
       const k = l / 255;
       const sh = (1 - k) * t.toneStrength;
       const hl = k * t.toneStrength;

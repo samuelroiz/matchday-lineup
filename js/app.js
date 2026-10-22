@@ -2,12 +2,12 @@
 
 import {
   ALL_SLOTS, BENCH_SLOTS, POSITIONS, SLOT_NAMES, SLOT_POSITIONS, STARTER_SLOTS, KICKOFF_TIMES, formatKickoff,
-  cmToFtIn, copyMatch, countPicked, findDuplicates, formatFixtureWhen, ftInToCm, isValid,
-  kgToLb, lbToKg, matchFileBase, normalizeMatch, normalizePlayer, removePlayerFromMatch,
+  autoPick, cmToFtIn, copyMatch, countPicked, findDuplicates, formatFixtureWhen, ftInToCm, isValid,
+  kgToLb, lbToKg, matchFileBase, normalizeMatch, normalizePlayer, packBench, removePlayerFromMatch,
   toNumberOrNull, validateMatch, validatePlayer, visibleStats, STAT_KEYS, newId,
   COACH_ROLES, compareCoaches, leaderBadge, normalizeCoach, removeCoachFromMatch, setLeader, syncLeaders, validateCoach,
 } from './model.js';
-import { openStore } from './storage.js';
+import { STORE_NAMES, openStore } from './storage.js';
 import { backupSummary, createBackup, describeRestore, restoreBackup } from './backup.js';
 import { forgetPhoto, loadImage, photoImage, resizeImage } from './images.js';
 import { createPhotoPicker } from './cropeditor.js';
@@ -47,6 +47,26 @@ function download(blob, filename) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** A File for the share sheet, or null where this browser can't share files. */
+function shareableFile(blob, filename) {
+  if (!blob || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function' || typeof File !== 'function') return null;
+  const file = new File([blob], filename, { type: blob.type });
+  try { return navigator.canShare({ files: [file] }) ? file : null; } catch { return null; }
+}
+
+/** Offer the phone's share sheet for an export. The button stays hidden where that isn't possible. */
+function setupShare(button, blob, filename, title) {
+  const file = shareableFile(blob, filename);
+  button.hidden = !file;
+  button.onclick = !file ? null : async () => {
+    try {
+      await navigator.share({ files: [file], title });
+    } catch (e) {
+      if (e?.name !== 'AbortError') toast(`Could not share: ${e?.message || e}. Use Download instead.`, { type: 'error' });
+    }
+  };
 }
 
 async function photoUrl(id) {
@@ -119,6 +139,17 @@ function statsList(p) {
 }
 
 const THUMB_W = 320;
+const cardPhotos = new WeakMap(); // card canvas -> { img, crop }, so a style change can repaint it in place
+
+function paintCardPhoto(canvas) {
+  const photo = cardPhotos.get(canvas);
+  if (!photo) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawPhoto(ctx, photo, 0, 0, canvas.width, canvas.height, state.settings.photoStyle);
+  canvas.dataset.style = state.settings.photoStyle;
+}
+
 // showLabel 'always' (player cards, so Serious and Fun stay told apart) or 'with-photo'.
 function photoFigure(id, crop, label, name, showLabel = 'always') {
   const canvas = el('canvas', { width: String(THUMB_W), height: String(Math.round(THUMB_W / CROP_ASPECT)), role: 'img', 'aria-label': `${label} photo of ${name}`, hidden: true });
@@ -128,13 +159,19 @@ function photoFigure(id, crop, label, name, showLabel = 'always') {
   else {
     photoImage(state.store, id).then((img) => {
       if (!img) return;
-      drawPhoto(canvas.getContext('2d'), { img, crop }, 0, 0, canvas.width, canvas.height, state.settings.photoStyle);
+      cardPhotos.set(canvas, { img, crop });
+      paintCardPhoto(canvas);
       canvas.hidden = false;
       canvas.dataset.rendered = 'true';
       fig.querySelector('.photo-empty')?.remove();
     });
   }
   return fig;
+}
+
+/** Repaint every squad and coach photo with the current style, without rebuilding the cards. */
+function repaintCardPhotos() {
+  for (const canvas of $$('.card-photo canvas')) paintCardPhoto(canvas);
 }
 
 function renderSquad() {
@@ -409,8 +446,10 @@ async function backupSquad() {
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     download(blob, `sfv-squad-backup-${new Date().toISOString().slice(0, 10)}.json`);
     toast(backupSummary(data), { type: 'success' });
+    return true;
   } catch (e) {
     toast(`Backup failed: ${e.message}`, { type: 'error' });
+    return false;
   }
 }
 
@@ -427,6 +466,52 @@ async function restoreSquad(file) {
     if (e?.name === 'QuotaExceededError') storageError(e);
     else toast(e.message, { type: 'error', timeout: 6000 });
   }
+}
+
+/** Delete every player, coach, match and photo on this device, after one confirm. */
+async function startOver() {
+  const counts = `${state.players.length} player${state.players.length === 1 ? '' : 's'}, ${state.coaches.length} coach${state.coaches.length === 1 ? '' : 'es'} and ${state.matches.length} match${state.matches.length === 1 ? '' : 'es'}`;
+  const tip = el('p', { class: 'hint start-over-tip' }, 'Back up first if you might want them again: the backup file can be restored later.');
+  const choice = await openDialog({
+    title: 'Start over?',
+    body: el('div', {},
+      el('p', {}, `This deletes ${counts}, with all their photos, from this device. It can't be undone.`),
+      tip),
+    actions: [
+      { label: 'Cancel', value: 'cancel' },
+      { label: 'Back up first', value: 'backup' },
+      { label: 'Delete everything', value: 'delete', variant: 'danger' },
+    ],
+    // Backing up keeps the dialog open, so they can delete straight after.
+    beforeClose: async (value) => {
+      if (value !== 'backup') return true;
+      if (await backupSquad()) {
+        tip.textContent = '✓ Backup downloaded. You can delete everything now.';
+        tip.classList.add('done');
+      }
+      return false;
+    },
+  });
+  if (choice !== 'delete') return;
+  pendingSave = null;
+  clearTimeout(saveTimer);
+  try {
+    for (const name of STORE_NAMES.filter((n) => n !== 'settings')) {
+      for (const rec of await state.store.getAll(name)) await state.store.delete(name, rec.id);
+    }
+  } catch (e) { storageError(e); return; }
+  for (const [id, url] of state.photoUrls) { if (url) URL.revokeObjectURL(url); forgetPhoto(id); }
+  state.photoUrls.clear();
+  state.players = [];
+  state.coaches = [];
+  state.matches = [];
+  state.settings.activeMatchId = null;
+  await saveSettings();
+  renderSquad();
+  renderCoaches();
+  renderMatchList();
+  renderMatchEditor();
+  toast('Everything deleted. Start by adding your players.', { type: 'success' });
 }
 
 // ---------- matches ----------
@@ -459,6 +544,7 @@ function renderMatchList() {
 
 async function selectMatch(id) {
   await flushMatchSave();
+  if (id !== state.settings.activeMatchId) setSaveStatus('idle');
   state.settings.activeMatchId = id;
   await saveSettings();
   renderMatchList();
@@ -551,7 +637,7 @@ function renderMatchEditor() {
   const logo = $('#m-logo-preview');
   logo.hidden = !m.opponentLogo;
   $('#m-logo-remove').hidden = !m.opponentLogo;
-  if (m.opponentLogo) photoUrl(m.opponentLogo).then((u) => { logo.src = u || ''; });
+  if (m.opponentLogo) photoUrl(m.opponentLogo).then((u) => { logo.src = u || ''; logo.hidden = !u; });
 
   const starterGroups = VIDEO_TEMPLATE.groups.filter((g) => g.slots && g.slots.every((s) => STARTER_SLOTS.includes(s)));
   $('#starters').replaceChildren(...starterGroups.map((g) => el('div', { class: 'slot-group' },
@@ -562,6 +648,8 @@ function renderMatchEditor() {
   }
   renderCoachToggles(m);
   refreshSelection(m);
+  if (!$('#save-status').dataset.state) setSaveStatus('idle');
+  setBenchNote(null);
 }
 
 const touched = new Set();
@@ -572,9 +660,22 @@ function touchedErrors(m) {
 
 let saveTimer = 0;
 let pendingSave = null;
+
+const SAVE_TEXT = {
+  idle: 'Changes save automatically',
+  saving: 'Saving…',
+  saved: '✓ Saved on this device',
+  error: 'Not saved',
+};
+function setSaveStatus(state) {
+  const node = $('#save-status');
+  node.dataset.state = state;
+  node.textContent = SAVE_TEXT[state];
+}
+
 function scheduleMatchSave(m) {
   m.updatedAt = new Date().toISOString();
-  $('#save-status').textContent = 'Saving…';
+  setSaveStatus('saving');
   pendingSave = m;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flushMatchSave, 300);
@@ -587,9 +688,9 @@ async function flushMatchSave() {
   if (!m) return;
   try {
     await state.store.put('matches', m);
-    $('#save-status').textContent = 'Saved';
+    setSaveStatus('saved');
   } catch (e) {
-    $('#save-status').textContent = 'Not saved';
+    setSaveStatus('error');
     storageError(e);
   }
   renderMatchList();
@@ -645,6 +746,32 @@ function setKickoffOptions(current) {
   sel.replaceChildren(el('option', { value: '' }, 'Not set'), ...times.map((t) => el('option', { value: t }, formatKickoff(t))));
 }
 
+/** Close gaps on the bench so replacements run 16, 17, 18... and say where a pick went. */
+function packReplacements(m, changedSlot) {
+  const id = m.selection[changedSlot];
+  m.selection = packBench(m.selection);
+  const now = id ? BENCH_SLOTS.find((s) => m.selection[s] === id) : null;
+  setBenchNote(now && now !== changedSlot ? `${playerById(id)?.name || 'Player'} moved to ${now}: replacements fill from 16 up.` : null);
+}
+
+function setBenchNote(moved) {
+  const note = $('#bench-note');
+  note.classList.toggle('moved', !!moved);
+  note.textContent = moved || 'Replacements fill from 16 up: pick into any bench shirt and gaps close automatically.';
+}
+
+function autoPickActive() {
+  const m = activeMatch();
+  if (!m) return;
+  if (!state.players.length) { toast('Add players on the Squad tab first.'); return; }
+  const { selection, added, empty } = autoPick(m.selection, state.players);
+  m.selection = selection;
+  refreshSelection(m);
+  scheduleMatchSave(m);
+  const gaps = empty.length ? ` Shirt${empty.length === 1 ? '' : 's'} ${empty.join(', ')} left empty: nobody plays there.` : '';
+  toast(added ? `Picked ${added} player${added === 1 ? '' : 's'}.${gaps}` : `No empty shirts to fill.${gaps}`, { type: added ? 'success' : 'info', timeout: 6000 });
+}
+
 function bindMatchForm() {
   const form = $('#match-form');
   form.addEventListener('submit', (e) => e.preventDefault());
@@ -672,7 +799,9 @@ function bindMatchForm() {
     const m = activeMatch();
     if (!m) return;
     if (e.target.matches('select[data-slot]')) {
-      m.selection[e.target.dataset.slot] = e.target.value || null;
+      const slot = Number(e.target.dataset.slot);
+      m.selection[slot] = e.target.value || null;
+      if (BENCH_SLOTS.includes(slot)) packReplacements(m, slot);
     } else if (e.target.matches('select[data-role]')) {
       // One captain, one vice-captain, never the same player.
       setLeader(m, e.target.dataset.role, e.target.value || null);
@@ -708,6 +837,7 @@ function bindMatchForm() {
     scheduleMatchSave(m);
     renderMatchEditor();
   });
+  $('#auto-pick').addEventListener('click', autoPickActive);
   $('#new-match').addEventListener('click', newMatch);
   $('#copy-match').addEventListener('click', copyActiveMatch);
   $('#delete-match').addEventListener('click', deleteActiveMatch);
@@ -799,6 +929,7 @@ async function exportSheet() {
   link.download = filename;
   link.hidden = false;
   link.textContent = `Save ${filename} again`;
+  setupShare($('#sheet-share'), blob, filename, `SFV vs ${m.opponent || 'TBC'}`);
   download(blob, filename);
   toast(`Saved ${filename}`, { type: 'success' });
 }
@@ -887,6 +1018,7 @@ async function exportVideo() {
     link.download = filename;
     link.dataset.type = result.type;
     link.dataset.size = String(result.blob.size);
+    setupShare($('#video-share'), result.blob, filename, `SFV vs ${m.opponent || 'TBC'}`);
     $('#video-format').textContent = result.ext === 'mp4'
       ? `MP4 · ${(result.blob.size / 1e6).toFixed(1)} MB · ready for Instagram.`
       : `WebM · ${(result.blob.size / 1e6).toFixed(1)} MB. This browser can't record MP4; Instagram may need it converted. Chrome 126+ and Safari record MP4.`;
@@ -998,8 +1130,13 @@ async function init() {
   const styleSel = $('#photo-style');
   styleSel.replaceChildren(...PHOTO_STYLES.map((s) => el('option', { value: s.value }, s.label)));
   styleSel.value = state.settings.photoStyle;
-  styleSel.addEventListener('change', async () => { state.settings.photoStyle = styleSel.value; await saveSettings(); renderSquad(); renderCoaches(); });
+  styleSel.addEventListener('change', () => {
+    state.settings.photoStyle = styleSel.value;
+    repaintCardPhotos(); // straight away, before the save
+    saveSettings();
+  });
   $('#backup').addEventListener('click', backupSquad);
+  $('#start-over').addEventListener('click', startOver);
   $('#restore').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) restoreSquad(f); });
 
   bindMatchForm();

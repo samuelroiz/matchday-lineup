@@ -206,16 +206,19 @@ export function cardState(card, t) {
 /**
  * How a card looks for a given cardState: its scale, how far its text has moved from the
  * Serious layout to the Fun layout (0-1), and the opacity of the stats (0 until the flip
- * is half way, when the Fun photo appears).
+ * is half way, when the Fun photo appears). funAlpha is the Fun photo's opacity in a
+ * crossfade: it fades in with the stats, so both transitions show them together.
  */
 export function cardLook(template, state, compact = false) {
   const L = template.layout;
   const grow = (compact ? L.compactFlipScale : L.flipScale) - 1;
+  const statsAlpha = clamp01((state.flip - 0.5) * 2);
   return {
     scale: 1 + grow * state.flip,
     layout: state.flip,
-    statsAlpha: clamp01((state.flip - 0.5) * 2),
+    statsAlpha,
     showFun: state.flip >= 0.5,
+    funAlpha: statsAlpha,
   };
 }
 

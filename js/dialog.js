@@ -68,13 +68,27 @@ export async function confirmDialog(message, { title = 'Are you sure?', okLabel 
   return value === true;
 }
 
+const MAX_TOASTS = 1; // the toast area is the free end of the tab bar: room for one
+
+/** Brief message in the page's toast area (in the tab bar). A new one replaces the last. */
 export function toast(message, { type = 'info', timeout = 4000 } = {}) {
   if (!toastHost) {
-    toastHost = el('div', { class: 'toasts', role: 'status', 'aria-live': 'polite' });
-    document.body.append(toastHost);
+    toastHost = document.querySelector('[data-toasts]');
+    if (!toastHost) {
+      toastHost = el('div', { class: 'toasts', role: 'status', 'aria-live': 'polite' });
+      document.body.append(toastHost);
+    }
   }
-  const t = el('div', { class: `toast toast-${type}` }, message);
+  const t = el('div', { class: `toast toast-${type}`, title: message }, message);
+  const leave = () => {
+    if (t.classList.contains('leaving')) return;
+    t.classList.add('leaving');
+    setTimeout(() => t.remove(), 300);
+  };
   toastHost.append(t);
-  setTimeout(() => { t.classList.add('leaving'); setTimeout(() => t.remove(), 300); }, timeout);
+  // Older ones make way, so they never pile up.
+  const showing = [...toastHost.querySelectorAll('.toast:not(.leaving)')];
+  for (const old of showing.slice(0, Math.max(0, showing.length - MAX_TOASTS))) old.remove();
+  setTimeout(leave, timeout);
   return t;
 }

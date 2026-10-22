@@ -167,7 +167,7 @@ export async function createMatch(qa, { opponent, date, kickoff, venue, competit
   await page.select('#m-captain', ids[captain]);
   if (vice) await page.select('#m-vice', ids[vice]);
   for (const box of await page.$$('#m-coaches input')) await box.click();
-  await page.waitForFunction(() => document.querySelector('#save-status').textContent === 'Saved');
+  await page.waitForFunction(() => document.querySelector('#save-status').dataset.state === 'saved');
   await page.evaluate(() => window.scrollTo(0, 0));
 }
 

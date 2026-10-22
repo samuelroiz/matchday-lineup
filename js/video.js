@@ -85,16 +85,19 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
     ctx.restore();
   }
 
-  function drawCardPhoto(ctx, x, y, w, h, entry, flip) {
+  function drawCardPhoto(ctx, x, y, w, h, entry, flip, look) {
     const serious = entry?.serious || null;
     const fun = entry?.fun || serious;
     const name = entry?.player?.name;
     const paint = (photo) => (photo ? drawPhoto(ctx, photo, x, y, w, h, data.photoStyle) : drawPlaceholder(ctx, x, y, w, h, name, S));
     if (template.transition === 'crossfade') {
-      paint(serious);
-      if (flip > 0) {
+      // The Fun photo fades in over the second half of the change, in step with the stats
+      // (a card flip swaps the photo at the half-way point, as the stats start to appear).
+      const a = look.funAlpha;
+      if (a < 1) paint(serious);
+      if (a > 0) {
         ctx.save();
-        ctx.globalAlpha *= flip;
+        ctx.globalAlpha *= a;
         paint(fun);
         ctx.restore();
       }
@@ -214,7 +217,7 @@ export function createVideoRenderer(data, timeline, template = VIDEO_TEMPLATE) {
       if (entry?.photo) drawPhoto(ctx, entry.photo, x, y, pw, h, data.photoStyle);
       else drawPlaceholder(ctx, x, y, pw, h, entry?.coach?.name, S);
     } else {
-      drawCardPhoto(ctx, x, y, pw, h, entry, state.flip);
+      drawCardPhoto(ctx, x, y, pw, h, entry, state.flip, look);
     }
     ctx.fillStyle = S.accent;
     ctx.fillRect(x + pw, y, 8, h);

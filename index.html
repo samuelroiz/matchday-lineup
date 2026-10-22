@@ -20,12 +20,15 @@
     <span id="storage-note" class="storage-note" hidden></span>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="Sections">
-    <button role="tab" id="tab-btn-squad" aria-controls="tab-squad" aria-selected="true" data-tab="squad"><span class="step">1 · </span>Squad</button>
-    <button role="tab" id="tab-btn-match" aria-controls="tab-match" aria-selected="false" data-tab="match"><span class="step">2 · </span>Match</button>
-    <button role="tab" id="tab-btn-sheet" aria-controls="tab-sheet" aria-selected="false" data-tab="sheet"><span class="step">3 · </span>Team sheet</button>
-    <button role="tab" id="tab-btn-video" aria-controls="tab-video" aria-selected="false" data-tab="video"><span class="step">4 · </span>Video</button>
-  </nav>
+  <div class="topbar">
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tab-btn-squad" aria-controls="tab-squad" aria-selected="true" data-tab="squad"><span class="step">1 · </span>Squad</button>
+      <button role="tab" id="tab-btn-match" aria-controls="tab-match" aria-selected="false" data-tab="match"><span class="step">2 · </span>Match</button>
+      <button role="tab" id="tab-btn-sheet" aria-controls="tab-sheet" aria-selected="false" data-tab="sheet"><span class="step">3 · </span>Team sheet</button>
+      <button role="tab" id="tab-btn-video" aria-controls="tab-video" aria-selected="false" data-tab="video"><span class="step">4 · </span>Video</button>
+    </nav>
+    <div class="toasts" data-toasts role="status" aria-live="polite"></div>
+  </div>
 
   <main>
     <!-- Squad -->
@@ -37,18 +40,23 @@
         <label class="inline-field">Photo style
           <select id="photo-style" aria-describedby="photo-style-help"></select>
         </label>
-        <span id="photo-style-help" class="sr-only">Applied to every photo when drawing. Stored photos are never changed.</span>
         <label class="inline-field">Show stats in
           <select id="units">
             <option value="imperial">ft/in · lb</option>
             <option value="metric">cm · kg</option>
           </select>
         </label>
-        <button type="button" class="btn" id="backup">Back up squad</button>
-        <label class="btn file-btn">Restore…
-          <input type="file" id="restore" accept="application/json,.json" hidden>
-        </label>
+        <div class="backup-tools">
+          <div class="backup-buttons">
+            <button type="button" class="btn" id="backup">Back up squad</button>
+            <label class="btn file-btn">Restore…
+              <input type="file" id="restore" accept="application/json,.json" hidden>
+            </label>
+          </div>
+          <button type="button" class="link-btn danger" id="start-over">Start over…</button>
+        </div>
       </div>
+      <p class="hint" id="photo-style-help">Photo style changes how photos look on cards, the team sheet and the video: <strong>Off</strong> as taken, <strong>Auto</strong> evens out light and colour, <strong>Club grade</strong> adds a maroon-and-gold tint. Your photos are never changed.</p>
       <p class="hint" id="squad-count"></p>
       <div id="player-list" class="player-grid"></div>
       <div id="squad-empty" class="empty" hidden>
@@ -104,12 +112,17 @@
               </div>
             </fieldset>
             <div id="dup-warning" class="warning" role="alert" hidden></div>
+            <div class="pick-tools">
+              <button type="button" class="btn" id="auto-pick">Auto-pick empty shirts</button>
+              <span class="hint">Fills empty shirts from each player's usual positions. Shirts you've picked stay as they are.</span>
+            </div>
             <fieldset>
               <legend>Starting XV <span id="xv-count" class="count"></span></legend>
               <div id="starters" class="slot-groups"></div>
             </fieldset>
             <fieldset>
               <legend>Bench <span id="bench-count" class="count"></span></legend>
+              <p class="hint" id="bench-note">Replacements fill from 16 up: pick into any bench shirt and gaps close automatically.</p>
               <div id="bench" class="slot-groups"></div>
             </fieldset>
             <fieldset>
@@ -136,6 +149,7 @@
         </div>
         <span class="spacer"></span>
         <button type="button" class="btn btn-primary" id="sheet-export">Download PNG</button>
+        <button type="button" class="btn" id="sheet-share" hidden>Share…</button>
         <a id="sheet-link" class="btn" hidden>Save again</a>
       </div>
       <p class="hint" id="sheet-note"></p>
@@ -175,6 +189,7 @@
           <div id="video-result" class="video-result" hidden>
             <video id="video-output" controls playsinline muted></video>
             <a id="video-link" class="btn btn-primary btn-wide">Download video</a>
+            <button type="button" class="btn btn-wide" id="video-share" hidden>Share…</button>
             <p class="hint" id="video-format"></p>
           </div>
         </div>
@@ -230,6 +245,7 @@
           <label><input type="checkbox" name="show-caps" checked> Caps</label>
         </div>
       </div>
+      <p class="hint photo-hint"><strong>Serious</strong> photo: the team sheet and the first side of the video card. <strong>Fun</strong> photo: shown when the card flips, with the stats.</p>
       <div class="photo-pickers"></div>
       <small class="err" data-for="photos"></small>
     </form>

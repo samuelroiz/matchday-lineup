@@ -5,6 +5,7 @@ import {
   ftInToCm, isValid, isValidDate, kgToLb, lbToKg, matchFileBase, normalizeMatch, normalizePlayer,
   removePlayerFromMatch, shortName, splitName, validateMatch, validatePlayer, visibleStats,
   compareCoaches, leaderBadge, normalizeCoach, removeCoachFromMatch, setLeader, syncLeaders, validateCoach,
+  BENCH_SLOTS, STARTER_SLOTS, SLOT_POSITIONS, autoPick, emptySelection, packBench,
 } from '../../js/model.js';
 
 const valid = (overrides = {}) => normalizePlayer({ name: 'Sam Roiz', positions: ['Hooker'], heightCm: 180, weightKg: 100, years: 3, ...overrides });
@@ -170,4 +171,74 @@ test('coaches are ordered by role, Head coach first, typed-in roles last, then b
     c('Ann Other', 'Forwards coach'), c('Bo Norole', ''),
   ].sort(compareCoaches).map((x) => x.name);
   assert.deepEqual(sorted, ['Maria Delgado', 'Al Assist', 'Ann Other', 'Grant Whitaker', 'Bea Backs', 'Zoe Physio', 'Amy Custom', 'Bo Norole']);
+});
+
+// ---------- auto-pick and bench packing ----------
+
+const squadOf = (spec) => Object.entries(spec).map(([name, positions]) => normalizePlayer({ id: name, name, positions }));
+
+test('packBench moves replacements down to 16, 17... keeping their order', () => {
+  const sel = { ...emptySelection(), 1: 'a', 17: 'x', 20: 'y', 23: 'z' };
+  const packed = packBench(sel);
+  assert.deepEqual(BENCH_SLOTS.map((s) => packed[s]), ['x', 'y', 'z', null, null, null, null, null]);
+  assert.equal(packed[1], 'a', 'starters untouched');
+  assert.equal(sel[17], 'x', 'input not changed');
+  assert.deepEqual(packBench(packed), packed, 'already packed stays the same');
+});
+
+test('auto-pick fills every shirt by position from a full squad', () => {
+  const squad = squadOf({
+    'P1 Loose': ['Prop'], 'P2 Tight': ['Prop'], 'H Hooker': ['Hooker'], 'L1 Lock': ['Lock'], 'L2 Lock': ['Lock'],
+    'F1 Flank': ['Flanker'], 'F2 Flank': ['Flanker'], 'N8 Eight': ['Number 8'], 'S9 Scrum': ['Scrum-half'],
+    'F10 Fly': ['Fly-half'], 'C1 Centre': ['Centre'], 'C2 Centre': ['Centre'], 'W1 Wing': ['Wing'], 'W2 Wing': ['Wing'],
+    'FB Full': ['Fullback'],
+    'H2 Hooker': ['Hooker'], 'P3 Prop': ['Prop'], 'P4 Prop': ['Prop'], 'L3 Lock': ['Lock'], 'F3 Flank': ['Flanker'],
+    'S2 Scrum': ['Scrum-half'], 'F2 Fly': ['Fly-half'], 'W3 Wing': ['Wing'],
+  });
+  const { selection, added, empty } = autoPick(emptySelection(), squad);
+  assert.equal(added, 23);
+  assert.deepEqual(empty, []);
+  const pos = (s) => squad.find((p) => p.id === selection[s]).positions;
+  for (const s of [...STARTER_SLOTS, ...BENCH_SLOTS]) {
+    assert.ok(pos(s).some((x) => SLOT_POSITIONS[s].includes(x)), `shirt ${s} gets a ${SLOT_POSITIONS[s].join('/')}, not ${pos(s)}`);
+  }
+  assert.equal(findDuplicates(selection).length, 0, 'nobody picked twice');
+  assert.equal(pos(8)[0], 'Number 8', 'the Number 8 wears 8, ahead of a flanker');
+});
+
+test('auto-pick keeps shirts already picked and never re-uses those players', () => {
+  const squad = squadOf({ 'A Prop': ['Prop'], 'B Prop': ['Prop'], 'C Prop': ['Prop'], 'D Hooker': ['Hooker'] });
+  const start = { ...emptySelection(), 1: 'C Prop', 10: 'A Prop' }; // a prop at fly-half: the coach's call
+  const { selection } = autoPick(start, squad);
+  assert.equal(selection[1], 'C Prop');
+  assert.equal(selection[10], 'A Prop');
+  assert.equal(selection[3], 'B Prop');
+  assert.equal(selection[2], 'D Hooker');
+  assert.equal(findDuplicates(selection).length, 0);
+  assert.equal(start[3], null, 'input not changed');
+});
+
+test('auto-pick spends a scarce player where only they fit', () => {
+  // One player covers hooker and prop; the other prop can only be a prop. The hooker shirt
+  // has one candidate, so it is filled first, and both props still get a shirt.
+  const squad = squadOf({ 'Versatile Vic': ['Prop', 'Hooker'], 'Only Prop': ['Prop'] });
+  const { selection, empty } = autoPick(emptySelection(), squad);
+  assert.equal(selection[2], 'Versatile Vic');
+  assert.ok([selection[1], selection[3]].includes('Only Prop'));
+  assert.ok(empty.includes(4) && empty.includes(15), 'shirts nobody plays stay empty');
+});
+
+test('auto-pick puts players left over on the bench, packed from 16', () => {
+  const squad = squadOf({ 'A Wing': ['Wing'], 'B Wing': ['Wing'], 'C Wing': ['Wing'], 'D Wing': ['Wing'], 'E Wing': ['Wing'], 'No Position': [] });
+  const { selection } = autoPick({ ...emptySelection(), 19: 'E Wing' }, squad);
+  const bench = BENCH_SLOTS.map((s) => selection[s]);
+  assert.deepEqual(bench.slice(3), [null, null, null, null, null]);
+  assert.equal(bench.filter(Boolean).length, 3, 'one wing on the bench already, plus the two left over');
+  assert.ok(bench.includes('E Wing') && bench.includes('No Position'));
+});
+
+test('auto-pick ignores ids of players no longer in the squad', () => {
+  const squad = squadOf({ 'A Prop': ['Prop'] });
+  const { selection } = autoPick({ ...emptySelection(), 1: 'deleted-id' }, squad);
+  assert.equal(selection[1], 'A Prop');
 });

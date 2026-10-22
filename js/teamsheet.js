@@ -2,7 +2,7 @@
 // layoutTeamSheet is pure (tested in Node); drawTeamSheet paints onto any 2D context.
 
 import { BENCH_SLOTS, STARTER_SLOTS, formatKickoff, formatMatchDate, leaderBadge, shortName, splitName } from './model.js';
-import { drawBackground, drawLeaderBadge, drawLogo, drawNameLine, drawNumberBadge, drawPlaceholder, fitText, roundRectPath } from './draw.js';
+import { drawBackground, drawLeaderBadge, drawLogo, drawNameLine, drawNumberBadge, drawPlaceholder, fitFont, fitText, roundRectPath } from './draw.js';
 import { drawPhoto } from './photodraw.js';
 
 export const SHEET_STYLE = {
@@ -74,22 +74,37 @@ export function fixtureLine(m) {
 function drawHeader(ctx, box, data, st) {
   const r = box.h * 0.4;
   const cy = box.y + box.h / 2;
-  drawLogo(ctx, data.logo, box.x + r, cy, r);
-  if (data.opponentLogo) drawLogo(ctx, data.opponentLogo, box.x + box.w - r, cy, r, { label: '' });
   const m = data.match;
-  const textW = box.w - r * 4 - 40;
-  const cx = box.x + box.w / 2;
+  const lines = [
+    { text: (m.competition || 'Matchday').toUpperCase(), y: 0.22, size: 0.12, font: st.body, color: st.accent },
+    { text: `SFV vs ${m.opponent || 'TBC'}`.toUpperCase(), y: 0.56, size: 0.3, font: st.display, color: st.white },
+    { text: fixtureLine(m), y: 0.76, size: 0.12, font: st.body, color: st.white },
+    { text: m.venue, y: 0.93, size: 0.1, font: st.body, color: 'rgba(255,255,255,0.75)' },
+  ].filter((ln) => ln.text);
+  let logoX = box.x + r;
+  let cx = box.x + box.w / 2;
+  let textW = box.w - r * 4 - 40;
+  if (data.opponentLogo) {
+    drawLogo(ctx, data.opponentLogo, box.x + box.w - r, cy, r, { label: '' });
+  } else {
+    // No opponent logo: nothing in its place. The club logo and the text sit together as one
+    // block, centred across the sheet.
+    const gap = 30;
+    textW = box.w - r * 2 - gap;
+    const widest = Math.max(...lines.map((ln) => {
+      fitFont(ctx, ln.text, textW, box.h * ln.size, ln.font);
+      return Math.min(textW, ctx.measureText(ln.text).width);
+    }));
+    const left = box.x + (box.w - (r * 2 + gap + widest)) / 2;
+    logoX = left + r;
+    cx = left + r * 2 + gap + widest / 2;
+  }
+  drawLogo(ctx, data.logo, logoX, cy, r);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = st.accent;
-  fitText(ctx, (m.competition || 'Matchday').toUpperCase(), cx, box.y + box.h * 0.22, textW, box.h * 0.12, st.body);
-  ctx.fillStyle = st.white;
-  fitText(ctx, `SFV vs ${m.opponent || 'TBC'}`.toUpperCase(), cx, box.y + box.h * 0.56, textW, box.h * 0.3, st.display);
-  ctx.fillStyle = st.white;
-  fitText(ctx, fixtureLine(m), cx, box.y + box.h * 0.76, textW, box.h * 0.12, st.body);
-  if (m.venue) {
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    fitText(ctx, m.venue, cx, box.y + box.h * 0.93, textW, box.h * 0.1, st.body);
+  for (const ln of lines) {
+    ctx.fillStyle = ln.color;
+    fitText(ctx, ln.text, cx, box.y + box.h * ln.y, textW, box.h * ln.size, ln.font);
   }
 }
 
