@@ -11,6 +11,8 @@ import { STORE_NAMES, openStore } from './storage.js';
 import { backupSummary, createBackup, describeRestore, restoreBackup } from './backup.js';
 import { forgetPhoto, loadImage, photoImage, resizeImage } from './images.js';
 import { createPhotoPicker } from './cropeditor.js';
+import { readSheetFile, toCsv } from './sheet.js';
+import { FIELD_LABELS, missingPhotos, planImport, playersToSave, showValue, templateRows } from './squadimport.js';
 import { drawPhoto } from './photodraw.js';
 import { PHOTO_STYLES } from './photostyle.js';
 import { CROP_ASPECT } from './crop.js';
@@ -179,10 +181,11 @@ function renderSquad() {
   const list = $('#player-list');
   const players = [...state.players].sort(byName)
     .filter((p) => !q || p.name.toLowerCase().includes(q) || p.nickname.toLowerCase().includes(q) || p.positions.join(' ').toLowerCase().includes(q));
-  list.replaceChildren(...players.map((p) => el('article', { class: 'player-card', dataset: { id: p.id } },
+  list.replaceChildren(...players.map((p) => el('article', { class: `player-card${missingPhotos(p).length ? ' needs-photos' : ''}`, dataset: { id: p.id } },
     el('div', { class: 'card-photos' }, photoFigure(p.photos.serious, p.crops.serious, 'Serious', p.name), photoFigure(p.photos.fun, p.crops.fun, 'Fun', p.name)),
     el('div', { class: 'card-info' },
       el('h3', {}, p.name),
+      needsTag(p),
       p.nickname ? el('p', { class: 'nick' }, `“${p.nickname}”`) : null,
       el('div', { class: 'chips static' }, p.positions.map((pos) => el('span', { class: 'chip' }, pos))),
       statsList(p)),
@@ -191,7 +194,17 @@ function renderSquad() {
       el('button', { type: 'button', class: 'btn btn-small btn-danger-ghost', onclick: () => deletePlayer(p) }, 'Delete')))));
   $('#squad-empty').hidden = state.players.length > 0;
   const n = state.players.length;
-  $('#squad-count').textContent = n ? `${n} player${n === 1 ? '' : 's'} in the squad${q ? ` · ${players.length} shown` : ''}` : '';
+  const needing = state.players.filter((p) => missingPhotos(p).length).length;
+  $('#squad-count').textContent = n
+    ? `${n} player${n === 1 ? '' : 's'} in the squad${needing ? ` · ${needing} still need${needing === 1 ? 's' : ''} photos (marked in gold)` : ''}${q ? ` · ${players.length} shown` : ''}`
+    : '';
+}
+
+/** "Needs photos" / "Needs Fun photo" on a squad card, so it's clear who still needs them. */
+function needsTag(p) {
+  const missing = missingPhotos(p);
+  if (!missing.length) return null;
+  return el('span', { class: 'needs-tag' }, missing.length === 2 ? 'Needs photos' : `Needs ${missing[0]} photo`);
 }
 
 function readPlayerForm(form, base) {
@@ -466,6 +479,90 @@ async function restoreSquad(file) {
     if (e?.name === 'QuotaExceededError') storageError(e);
     else toast(e.message, { type: 'error', timeout: 6000 });
   }
+}
+
+// ---------- import from a spreadsheet ----------
+
+function downloadTemplate(e) {
+  e.preventDefault();
+  download(new Blob([toCsv(templateRows())], { type: 'text/csv' }), 'sfv-squad-template.csv');
+}
+
+const table = (head, rows) => el('div', { class: 'table-wrap' }, el('table', {},
+  el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))),
+  el('tbody', {}, rows.map((r) => el('tr', {}, r.map((c) => el('td', {}, c)))))));
+
+/** What the import will do, laid out for the confirm dialog. */
+function importPreview(plan, units) {
+  const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const sections = [];
+  const total = plan.add.length + plan.update.length;
+  sections.push(el('p', { class: 'import-summary' }, total
+    ? `${plural(plan.add.length, 'new player')} and ${plural(plan.update.length, 'update')}. Nothing changes until you press Import.`
+    : 'Nothing to import.'));
+  if (plan.add.length) {
+    sections.push(el('section', { dataset: { section: 'add' } }, el('h3', {}, `New players (${plan.add.length})`),
+      table(['Name', 'Positions', 'Height', 'Weight', 'Years', 'Caps'], plan.add.map(({ player: p }) => [
+        p.name + (p.nickname ? ` “${p.nickname}”` : ''), showValue('positions', p.positions), showValue('heightCm', p.heightCm, units),
+        showValue('weightKg', p.weightKg, units), showValue('years', p.years), showValue('caps', p.caps)]))));
+  }
+  if (plan.update.length) {
+    sections.push(el('section', { dataset: { section: 'update' } }, el('h3', {}, `Updates to players already in the squad (${plan.update.length})`),
+      table(['Name', 'Changes'], plan.update.map(({ before, changes }) => [before.name, el('div', {}, changes.map((c) => el('div', { class: 'change' },
+        `${FIELD_LABELS[c.field]}: `, el('span', { class: 'from' }, showValue(c.field, c.from, units)), ' → ', el('strong', {}, showValue(c.field, c.to, units)))))]))));
+  }
+  if (plan.unchanged.length) {
+    sections.push(el('section', { dataset: { section: 'unchanged' } }, el('h3', {}, `Already up to date (${plan.unchanged.length})`),
+      el('p', { class: 'hint' }, plan.unchanged.map((u) => u.player.name).join(', '))));
+  }
+  if (plan.errors.length) {
+    sections.push(el('section', { dataset: { section: 'errors' } }, el('h3', { class: 'bad' }, `Rows with problems, not imported (${plan.errors.length})`),
+      table(['Row', 'Name', 'Why'], plan.errors.map((e) => [String(e.row), e.name || '—', e.reasons.join(' ')]))));
+  }
+  if (plan.ignoredColumns.length) {
+    sections.push(el('p', { class: 'hint' }, `Columns not used: ${plan.ignoredColumns.join(', ')}.`));
+  }
+  sections.push(el('p', { class: 'hint' }, 'Updates only change the cells filled in the sheet. Photos, crops and the "Show in the video" choices are never touched.'));
+  return el('div', { class: 'import-preview' }, sections);
+}
+
+async function importSheet(file) {
+  const units = state.settings.units;
+  let plan;
+  try {
+    plan = planImport(await readSheetFile(file), state.players, { units });
+  } catch (e) {
+    toast(e.message || String(e), { type: 'error', timeout: 7000 });
+    return;
+  }
+  if (plan.error) {
+    await openDialog({ title: `Can't import ${file.name}`, body: el('p', {}, plan.error), actions: [{ label: 'OK', value: true, variant: 'primary' }] });
+    return;
+  }
+  const toSave = playersToSave(plan);
+  const choice = await openDialog({
+    title: `Import ${file.name}`,
+    body: importPreview(plan, units),
+    className: 'modal-wide',
+    actions: toSave.length
+      ? [{ label: 'Cancel', value: 'cancel' }, { label: `Import ${toSave.length} player${toSave.length === 1 ? '' : 's'}`, value: 'import', variant: 'primary' }]
+      : [{ label: 'Close', value: 'cancel', variant: 'primary' }],
+  });
+  if (choice !== 'import') return;
+  try {
+    for (const p of toSave) await state.store.put('players', p);
+  } catch (e) { storageError(e); return; }
+  for (const p of toSave) {
+    const i = state.players.findIndex((x) => x.id === p.id);
+    if (i >= 0) state.players[i] = p; else state.players.push(p);
+  }
+  renderSquad();
+  renderMatchEditor();
+  const added = plan.add.length;
+  const updated = plan.update.length;
+  const needing = toSave.filter((p) => missingPhotos(p).length).length;
+  const parts = [added && `Added ${added} player${added === 1 ? '' : 's'}`, updated && `${added ? 'updated' : 'Updated'} ${updated}`].filter(Boolean).join(' and ');
+  toast(`${parts}.${needing ? ` ${needing} still need${needing === 1 ? 's' : ''} photos (marked in gold).` : ''}`, { type: 'success', timeout: 7000 });
 }
 
 /** Delete every player, coach, match and photo on this device, after one confirm. */
@@ -1137,6 +1234,8 @@ async function init() {
   });
   $('#backup').addEventListener('click', backupSquad);
   $('#start-over').addEventListener('click', startOver);
+  $('#import-sheet').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importSheet(f); });
+  $('#import-template').addEventListener('click', downloadTemplate);
   $('#restore').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) restoreSquad(f); });
 
   bindMatchForm();

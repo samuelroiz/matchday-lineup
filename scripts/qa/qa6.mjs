@@ -1,6 +1,6 @@
 // Visual QA, small squad: 6 players, 2 coaches (one without a photo), the three photo styles,
 // a part-filled match, toast placement (desktop and phone), the crop editor, both team sheets (and one with no bench), the video preview (no export),
-// before/after frames of the card layout and the ?clip test mode.   npm run qa:6  ->  qa/six-players/
+// before/after frames of the card layout, the ?clip test mode and a spreadsheet import.   npm run qa:6  ->  qa/six-players/
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -148,6 +148,21 @@ await settle();
 notes.clipLength = await page.$eval('#video-length', (e) => e.textContent);
 notes.clipNote = await page.$eval('#video-note', (e) => e.innerText);
 await qa.shotEl('12-video-clip-mode-side', '.video-side');
+
+// Import from a spreadsheet: the preview (new, updates, errors), then the squad with the
+// players who still need photos marked.
+await page.goto(`${page.url().split(/[?#]/)[0]}#squad`);
+await page.waitForSelector('html[data-ready="true"]');
+await (await page.$('#import-sheet')).uploadFile(join(REPO, 'test', 'fixtures', 'sample-squad.xlsx'));
+await page.waitForSelector('dialog[open] .import-preview');
+await settle();
+await qa.shot('13-import-preview');
+notes.importButton = await page.$eval('dialog [data-action=import]', (b) => b.textContent);
+await page.click('dialog [data-action=import]');
+await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+await settle(600);
+notes.importToast = await page.$eval('.toast:last-child', (t) => t.textContent);
+await qa.shot('13a-squad-after-import', { fullPage: true });
 
 await writeFile(join(OUT, 'notes.json'), JSON.stringify(notes, null, 2));
 log('notes', notes);

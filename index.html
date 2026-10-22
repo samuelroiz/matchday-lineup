@@ -56,12 +56,20 @@
           <button type="button" class="link-btn danger" id="start-over">Start over…</button>
         </div>
       </div>
+      <div class="import-bar">
+        <label class="btn file-btn">Import from sheet…
+          <input type="file" id="import-sheet" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+        </label>
+        <a href="#" class="link-btn" id="import-template">Download template</a>
+        <span class="hint">Add or update many players from a .csv or .xlsx file; you'll see a preview first. Google Sheets: <strong>File › Download › Comma-separated values (.csv)</strong>.</span>
+      </div>
       <p class="hint" id="photo-style-help">Photo style changes how photos look on cards, the team sheet and the video: <strong>Off</strong> as taken, <strong>Auto</strong> evens out light and colour, <strong>Club grade</strong> adds a maroon-and-gold tint. Your photos are never changed.</p>
       <p class="hint" id="squad-count"></p>
       <div id="player-list" class="player-grid"></div>
       <div id="squad-empty" class="empty" hidden>
         <h2>No players yet</h2>
         <p>Add each player once with a Serious and a Fun photo. Next week you only pick the team.</p>
+        <p>Have the squad in a spreadsheet? Use <strong>Import from sheet…</strong> above, then add the photos.</p>
       </div>
 
       <div class="section-head">
