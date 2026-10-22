@@ -6,8 +6,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseCsv, readXlsx, toCsv } from '../../js/sheet.js';
 import {
-  TEMPLATE_COLUMNS, fieldForHeader, matchColumns, missingPhotos, parseHeight, parsePositions, parseWeight,
-  planImport, playersToSave, templateRows, undoDate,
+  EXAMPLE_NAME, TEMPLATE_COLUMNS, fieldForHeader, importActionLabel, matchColumns, missingPhotos, parseHeight, parsePositions,
+  parseWeight, planImport, playersToSave, sameShown, templateRows, undoDate,
 } from '../../js/squadimport.js';
 import { normalizePlayer } from '../../js/model.js';
 
@@ -123,8 +123,32 @@ test('column names match loosely', () => {
 
 test('the template has exactly the agreed columns, and they all match', () => {
   assert.deepEqual(TEMPLATE_COLUMNS, ['Name', 'Nickname', 'Positions', 'Height', 'Weight', 'Years at SFV', 'Caps']);
-  assert.deepEqual(templateRows(), [TEMPLATE_COLUMNS]);
+  assert.deepEqual(templateRows()[0], TEMPLATE_COLUMNS);
   assert.deepEqual(Object.keys(matchColumns(TEMPLATE_COLUMNS).columns), ['name', 'nickname', 'positions', 'heightCm', 'weightKg', 'years', 'caps']);
+});
+
+test('the template has one example row showing the formats, and importing it skips that row', () => {
+  const rows = templateRows();
+  assert.equal(rows.length, 2);
+  const [name, , positions, height, weight] = rows[1];
+  assert.equal(name, 'EXAMPLE (skipped on import)');
+  assert.equal(name, EXAMPLE_NAME);
+  assert.equal(positions, 'Prop, Hooker or 1/2');
+  assert.equal(height, '6\'1" or 185 cm');
+  assert.equal(weight, '220 lb or 100 kg');
+  // The example's formats really are the accepted ones.
+  assert.deepEqual(parsePositions(positions).positions, ['Prop', 'Hooker']);
+  for (const h of height.split(' or ')) assert.ok(parseHeight(h).cm, h);
+  for (const w of weight.split(' or ')) assert.ok(parseWeight(w).kg, w);
+
+  // Untouched template: nothing to import, and the preview says why.
+  const only = planImport(parseCsv(toCsv(rows)), []);
+  assert.match(only.error, /Only the example row/);
+  // With players added under it (and in a different case), the example row is still skipped.
+  const filled = planImport([...rows.map((r, i) => (i === 1 ? ['example (Skipped on import)', ...r.slice(1)] : r)), ['Bo Kim', '', 'Hooker']], []);
+  assert.deepEqual(filled.exampleRows, [2]);
+  assert.deepEqual(filled.add.map((a) => a.player.name), ['Bo Kim']);
+  assert.deepEqual(filled.errors, []);
 });
 
 // ---------- values ----------
@@ -137,15 +161,46 @@ test('every height format', () => {
   assert.equal(parseHeight("6'").cm, 182.9);
   assert.equal(parseHeight('6 ft').cm, 182.9);
   for (const h of ['185 cm', '185cm', '185 CM', '185', '1.85 m', '1.85m', '1.85']) assert.equal(parseHeight(h).cm, 185, h);
-  for (const h of ['6', 'tall', "6'13", '6-13', '12-5', '']) assert.ok(parseHeight(h).error, `"${h}" is refused`);
+  for (const h of ['tall', "6'13", '6-13', '12-5', '300', '20', '']) assert.ok(parseHeight(h).error, `"${h}" is refused`);
+});
+
+test('a bare height is read in the only unit it makes sense in, always with a note', () => {
+  assert.deepEqual(parseHeight('185'), { cm: 185, note: 'Height 185 read as cm (too tall to be inches).' });
+  assert.deepEqual(parseHeight('73'), { cm: 185.4, note: 'Height 73 read as inches (6\'1"); too short to be cm.' });
+  assert.deepEqual(parseHeight('6'), { cm: 182.9, note: 'Height 6 read as 6\'0" (feet).' });
+  assert.deepEqual(parseHeight('1.85'), { cm: 185, note: 'Height 1.85 read as metres.' });
+  assert.deepEqual(parseHeight('185', 'cm'), { cm: 185 }, 'a unit in the column heading is taken as written');
+  for (const h of ['6\'1"', '185 cm', '73 in', '6 ft 1']) assert.equal(parseHeight(h).note, undefined, `${h} has its unit: no note`);
 });
 
 test('every weight format; a bare number follows the units setting', () => {
   for (const w of ['220 lb', '220lb', '220 lbs', '220 LBS', '220 pounds', '220#']) assert.equal(parseWeight(w, 'kg').kg, 99.8, w);
   for (const w of ['100 kg', '100kg', '100 KG', '100 kgs', '100 kilos']) assert.equal(parseWeight(w, 'lb').kg, 100, w);
-  assert.equal(parseWeight('220', 'lb').kg, 99.8, 'bare number with ft/in · lb');
   assert.equal(parseWeight('100', 'kg').kg, 100, 'bare number with cm · kg');
+  assert.equal(parseWeight('100', 'lb').kg, 45.4, 'bare number with ft/in · lb');
   assert.ok(parseWeight('heavy').error);
+});
+
+test('a bare weight that fits only one unit uses it; one that fits both is an assumption; never silent', () => {
+  for (const setting of ['lb', 'kg']) {
+    assert.deepEqual(parseWeight('76', setting), { kg: 76, note: 'Weight 76 read as kg (too light to be lb).' }, `76 with ${setting}`);
+    assert.deepEqual(parseWeight('282', setting), { kg: 127.9, note: 'Weight 282 read as lb (too heavy to be kg).' }, `282 with ${setting}`);
+  }
+  assert.deepEqual(parseWeight('128', 'lb'), { kg: 58.1, note: 'Weight 128 read as lb (from "Show stats in"). Write 128 kg if that\'s wrong.', assumed: true });
+  assert.deepEqual(parseWeight('128', 'kg'), { kg: 128, note: 'Weight 128 read as kg (from "Show stats in"). Write 128 lb if that\'s wrong.', assumed: true });
+  assert.deepEqual(parseWeight('128', 'lb', 'kg'), { kg: 128 }, 'a unit in the column heading is taken as written');
+  for (const w of ['20', '500']) assert.match(parseWeight(w).error, /isn't a likely weight in lb or kg/, w);
+  for (const w of ['128 lb', '128 kg']) assert.equal(parseWeight(w).note, undefined, `${w} has its unit: no note`);
+});
+
+test('the preview carries each bare-number note, and marks assumptions', () => {
+  const plan = planImport([['Name', 'Height', 'Weight'], ['Al', '185', '76'], ['Bo', '6\'1"', '128'], ['Cy', '73', '282 lb']], [], { units: 'imperial' });
+  const notes = Object.fromEntries(plan.add.map((a) => [a.player.name, a.notes]));
+  assert.deepEqual(notes.Al.map((n) => [n.field, n.assumed]), [['heightCm', false], ['weightKg', false]]);
+  assert.match(notes.Al[1].text, /76 read as kg/);
+  assert.deepEqual(notes.Bo, [{ field: 'weightKg', text: 'Weight 128 read as lb (from "Show stats in"). Write 128 kg if that\'s wrong.', assumed: true }]);
+  assert.deepEqual(notes.Cy.map((n) => n.field), ['heightCm'], 'a weight with a unit needs no note');
+  assert.equal(plan.add.find((a) => a.player.name === 'Al').player.weightKg, 76);
 });
 
 test('several positions, separated by commas, slashes and more', () => {
@@ -171,7 +226,7 @@ test('positions a spreadsheet turned into a date come back', () => {
 
 // ---------- the plan ----------
 
-test('the sample sheet: new players, and rows with errors and why (CSV and xlsx agree)', async () => {
+test('the sample sheet: bad cells are skipped with a warning, only nameless and repeated rows are dropped (CSV and xlsx agree)', async () => {
   const fromCsv = planImport(parseCsv(readFileSync(fixture('sample-squad.csv'), 'utf8')), [], { units: 'imperial' });
   const fromXlsx = planImport(await readXlsx(readFileSync(fixture('sample-squad.xlsx'))), [], { units: 'imperial' });
   for (const plan of [fromCsv, fromXlsx]) {
@@ -184,17 +239,61 @@ test('the sample sheet: new players, and rows with errors and why (CSV and xlsx 
       'Ryan Castillo': ['Scrum-half', 170, 77.1, 2, 18, ''],
       'Ethan Hughes': ['Fly-half+Centre', 182.9, 86, 0, null, ''],
       "Liam O'Connor": ['Wing+Fullback', 188, 88.5, 1, 3, ''],
+      // One bad cell no longer drops the row: the cell is left blank.
+      'Goalie Gary': ['', 182.9, 90.7, 1, 1, ''],
+      'Tall Tim': ['Lock', null, 113.4, 1, 1, ''],
     });
+    const warn = (name) => plan.add.find((a) => a.player.name === name).warnings.map((w) => w.text);
+    assert.deepEqual(warn('Goalie Gary'), ['Positions skipped: "Goalkeeper" not recognised. Use Prop, Hooker, Lock, Flanker, Number 8, Scrum-half, Fly-half, Centre, Wing, Fullback.']);
+    assert.deepEqual(warn('Tall Tim'), ['Height skipped: 9\'2" should be between 4\'0" and 7\'6" (120–230 cm).']);
+    assert.deepEqual(warn('Mateo Alvarez'), []);
     const errors = Object.fromEntries(plan.errors.map((e) => [e.row, [e.name, e.reasons.join(' ')]]));
-    assert.match(errors[9][1], /Unknown position: "Goalkeeper"/);
-    assert.match(errors[10][1], /Height 9'2" should be between 4'0" and 7'6"/);
+    assert.deepEqual(Object.keys(errors).map(Number), [11, 12], 'only the row with no name and the repeated name');
     assert.equal(errors[11][0], '');
     assert.match(errors[11][1], /No name/);
     assert.match(errors[12][1], /Same name as row 2/);
-    assert.deepEqual(Object.keys(errors).map(Number), [9, 10, 11, 12]);
     assert.deepEqual(plan.ignoredColumns, ['Email']);
     for (const { player } of plan.add) assert.deepEqual(missingPhotos(player), ['Serious', 'Fun']);
+    // Bare weights are explained: 225 can only be lb; 195 could be either, so it is an assumption.
+    const notes = (name) => plan.add.find((a) => a.player.name === name).notes;
+    assert.match(notes('Christopher Rodriguez')[0].text, /225 read as lb \(too heavy to be kg\)/);
+    assert.equal(notes("Liam O'Connor")[0].assumed, true);
   }
+});
+
+test('one bad cell leaves just that field out; the rest of the row still imports or updates', () => {
+  const rows = [['Name', 'Nickname', 'Positions', 'Height', 'Weight', 'Years', 'Caps'],
+    ['Al', 'x'.repeat(31), 'Prop, Goalkeeper', 'tall', '20', '2.5', 'lots'],
+    ['Mateo Alvarez', '', 'Lock', '7\'11"', '125 kg', '61', '']];
+  const plan = planImport(rows, [existing()], { units: 'imperial' });
+  const al = plan.add[0];
+  assert.equal(al.player.name, 'Al');
+  assert.deepEqual(al.player.positions, ['Prop'], 'the positions it knows are kept');
+  assert.deepEqual([al.player.nickname, al.player.heightCm, al.player.weightKg, al.player.years, al.player.caps], ['', null, null, null, null]);
+  assert.deepEqual(al.warnings.map((w) => w.field), ['nickname', 'positions', 'heightCm', 'weightKg', 'years', 'caps']);
+  assert.deepEqual(al.warnings.map((w) => w.text), [
+    'Nickname skipped: longer than 30 characters.',
+    'Positions: "Goalkeeper" not recognised, so left out. Use Prop, Hooker, Lock, Flanker, Number 8, Scrum-half, Fly-half, Centre, Wing, Fullback.',
+    'Height skipped: "tall" isn\'t clear. Write it like 6\'1", 6 ft 1 or 185 cm.',
+    "Weight skipped: 20 isn't a likely weight in lb or kg. Write it like 220 lb or 100 kg.",
+    'Years at SFV skipped: "2.5" should be a whole number.',
+    'Caps skipped: "lots" should be a whole number.',
+  ]);
+  const mateo = plan.update[0];
+  assert.deepEqual(mateo.changes.map((c) => c.field), ['positions', 'weightKg'], 'bad height and years are not applied');
+  assert.equal(mateo.player.heightCm, 180.3, 'the squad height is kept, not blanked');
+  assert.equal(mateo.player.years, 3);
+  assert.deepEqual(mateo.warnings.map((w) => w.field), ['heightCm', 'years']);
+  assert.match(mateo.warnings[1].text, /Years at SFV skipped: 61 should be 0 to 60/);
+  assert.deepEqual(plan.errors, []);
+});
+
+test('only a row with no name is rejected; a very long name is shortened with a warning', () => {
+  const plan = planImport([['Name', 'Caps'], ['', '3'], ['N'.repeat(70), '1']], []);
+  assert.deepEqual(plan.errors.map((e) => e.row), [2]);
+  assert.match(plan.errors[0].reasons[0], /No name/);
+  assert.equal(plan.add[0].player.name.length, 60);
+  assert.deepEqual(plan.add[0].warnings.map((w) => w.text), ['Name shortened to 60 characters.']);
 });
 
 const existing = () => normalizePlayer({
@@ -224,6 +323,34 @@ test('update by name (any case): only filled cells change; photos, crops and tog
   assert.deepEqual(player.show, before.show);
   assert.deepEqual(playersToSave(plan), [player]);
   assert.equal(before.weightKg, 120.2, 'the squad record itself is not changed by planning');
+});
+
+test('an unchanged value is never listed as a change, however it was stored or typed', () => {
+  // Stored as 128 kg (typed in kg on the form); the sheet says 282, which reads as 127.9 kg.
+  const squad = [normalizePlayer({ ...existing(), weightKg: 128, heightCm: 185, positions: ['Hooker', 'Prop'], nickname: 'Tank' })];
+  for (const [units, height, weight] of [['imperial', '6\'1"', '282'], ['imperial', '185 cm', '282 lb'], ['metric', '185.4 cm', '128 kg'], ['metric', '6\'1"', '128.04 kg']]) {
+    const plan = planImport([['Name', 'Nickname', 'Positions', 'Height', 'Weight'], ['Mateo Alvarez', ' Tank ', 'Prop / Hooker', height, weight]], squad, { units });
+    assert.equal(plan.update.length, 0, `${units}: ${height}, ${weight} -> ${JSON.stringify(plan.update[0]?.changes)}`);
+    assert.equal(plan.unchanged.length, 1);
+    assert.deepEqual(plan.unchanged[0].notes, [], 'no notes for values that are not being changed');
+  }
+  // A real change is still a change, and only the field that changed is written.
+  const plan = planImport([['Name', 'Height', 'Weight'], ['Mateo Alvarez', '6\'1"', '285']], squad, { units: 'imperial' });
+  assert.deepEqual(plan.update[0].changes.map((c) => c.field), ['weightKg']);
+  assert.equal(plan.update[0].player.heightCm, 185, 'the stored height is kept exactly');
+  assert.ok(sameShown('weightKg', 128, 127.9, 'imperial'));
+  assert.ok(sameShown('weightKg', 128, 127.9, 'metric'), '128 and 127.9 kg both show as 128 kg');
+  assert.ok(!sameShown('weightKg', 128, 129.3, 'imperial'));
+});
+
+test('the confirm button says what will happen', () => {
+  const p = (a, u) => ({ add: Array(a).fill({}), update: Array(u).fill({}) });
+  assert.equal(importActionLabel(p(2, 3)), 'Add 2, update 3');
+  assert.equal(importActionLabel(p(5, 0)), 'Add 5 players');
+  assert.equal(importActionLabel(p(1, 0)), 'Add 1 player');
+  assert.equal(importActionLabel(p(0, 1)), 'Update 1 player');
+  assert.equal(importActionLabel(p(0, 4)), 'Update 4 players');
+  assert.equal(importActionLabel(p(0, 0)), '');
 });
 
 test('a row matching the squad exactly is "already up to date", not an update', () => {
@@ -256,12 +383,11 @@ test('problems with the whole sheet, and with names the squad has twice', () => 
   assert.match(plan.errors[0].reasons[0], /2 players in the squad are called Bo Kim/);
 });
 
-test('bad numbers are explained', () => {
+test('bad numbers are explained, and the rest of the row is kept', () => {
   const plan = planImport([['Name', 'Years', 'Caps', 'Weight'], ['A', '2.5', 'lots', '20 kg'], ['B', '', '', '']], []);
-  const why = plan.errors[0].reasons.join(' ');
-  assert.match(why, /Years at SFV "2\.5" should be a whole number/);
-  assert.match(why, /Caps "lots" should be a whole number/);
-  assert.equal(plan.add.length, 1, 'a row with just a name is a valid new player');
-  const tooLight = planImport([['Name', 'Weight'], ['C', '20 kg']], []);
-  assert.match(tooLight.errors[0].reasons[0], /Weight 44 lb should be between 88 and 440 lb/);
+  const why = plan.add[0].warnings.map((w) => w.text).join(' ');
+  assert.match(why, /Years at SFV skipped: "2\.5" should be a whole number/);
+  assert.match(why, /Caps skipped: "lots" should be a whole number/);
+  assert.match(why, /Weight skipped: 44 lb should be between 88 and 440 lb/);
+  assert.equal(plan.add.length, 2, 'both rows import; a row with just a name is a valid new player');
 });

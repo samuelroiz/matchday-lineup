@@ -76,7 +76,10 @@ test('the Squad tab offers import, a template and the Google Sheets tip', async 
   await page.waitForFunction(() => window.__downloads.length === 1);
   const t = await page.evaluate(async () => { const d = window.__downloads[0]; return { name: d.name, text: await (await fetch(d.href)).text() }; });
   assert.equal(t.name, 'sfv-squad-template.csv');
-  assert.equal(t.text, 'Name,Nickname,Positions,Height,Weight,Years at SFV,Caps\r\n');
+  assert.equal(t.text, 'Name,Nickname,Positions,Height,Weight,Years at SFV,Caps\r\n'
+    + 'EXAMPLE (skipped on import),Tank,"Prop, Hooker or 1/2","6\'1"" or 185 cm",220 lb or 100 kg,3,25\r\n');
+  // The template, filled in under its example row, imports only the real player.
+  await writeFile(join(dir, 'filled-template.csv'), `${t.text}Bo Kim,,Hooker,5'9",210,2,8\r\n`);
 });
 
 test('a squad player added by hand, with photos, a crop and weight hidden', async () => {
@@ -100,10 +103,22 @@ test('the preview lists new players, updates and rows with errors; Cancel change
   const before = await stored();
   await upload(fixture('sample-squad.csv'));
   const add = await section('add');
-  assert.equal(add.title, 'New players (5)');
-  assert.deepEqual(add.rows.map((r) => r[0]), ['Christopher Rodriguez “Chris”', 'Sione Taufa', 'Ryan Castillo', 'Ethan Hughes', "Liam O'Connor"]);
-  assert.deepEqual(add.rows[0].slice(1), ['Hooker, Prop', '5\'10"', '225 lb', '6', '71']);
+  assert.equal(add.title, 'New players (7)');
+  assert.deepEqual(add.rows.map((r) => r[0]), ['Christopher Rodriguez “Chris”', 'Sione Taufa', 'Ryan Castillo', 'Ethan Hughes', "Liam O'Connor", 'Goalie Gary', 'Tall Tim']);
+  assert.deepEqual(add.rows[0].slice(1, 6), ['Hooker, Prop', '5\'10"', '225 lb', '6', '71']);
   assert.deepEqual(add.rows[3].slice(1, 3), ['Fly-half, Centre', '6\'0"']);
+  // Bare numbers: read in the only unit that fits, or assumed from the setting, and said so.
+  assert.equal(add.rows[0][6], 'Weight 225 read as lb (too heavy to be kg).');
+  assert.match(add.rows[2][6], /Height 170 read as cm/);
+  assert.match(add.rows[4][6], /^Assumed: Weight 195 read as lb \(from "Show stats in"\)/);
+  // A bad cell is left blank with a warning; the row still comes in.
+  assert.deepEqual(add.rows[5].slice(1, 3), ['—', '6\'0"']);
+  assert.match(add.rows[5][6], /⚠ Positions skipped: "Goalkeeper" not recognised/);
+  assert.deepEqual(add.rows[6].slice(1, 3), ['Lock', '—']);
+  assert.match(add.rows[6][6], /⚠ Height skipped: 9'2" should be between 4'0" and 7'6"/);
+  const checks = await page.$eval('dialog .import-checks', (e) => e.textContent);
+  assert.match(checks, /2 rows with a cell that couldn't be used/);
+  assert.match(checks, /numbers without a unit, 2 of them assumed/);
   const upd = await section('update');
   assert.equal(upd.title, 'Updates to players already in the squad (1)');
   assert.equal(upd.rows[0][0], 'Mateo Alvarez');
@@ -111,16 +126,14 @@ test('the preview lists new players, updates and rows with errors; Cancel change
     assert.ok(upd.rows[0][1].includes(change), `${change} in ${upd.rows[0][1]}`);
   }
   const errs = await section('errors');
-  assert.equal(errs.title, 'Rows with problems, not imported (4)');
-  assert.deepEqual(errs.rows.map((r) => r.slice(0, 2)), [['9', 'Goalie Gary'], ['10', 'Tall Tim'], ['11', '—'], ['12', 'MATEO ALVAREZ']]);
-  assert.match(errs.rows[0][2], /Unknown position: "Goalkeeper"/);
-  assert.match(errs.rows[1][2], /should be between/);
-  assert.match(errs.rows[2][2], /No name/);
-  assert.match(errs.rows[3][2], /Same name as row 2/);
+  assert.equal(errs.title, 'Rows not imported (2)');
+  assert.deepEqual(errs.rows.map((r) => r.slice(0, 2)), [['11', '—'], ['12', 'MATEO ALVAREZ']]);
+  assert.match(errs.rows[0][2], /No name/);
+  assert.match(errs.rows[1][2], /Same name as row 2/);
   const dialog = await page.$eval('dialog', (d) => d.textContent);
   assert.match(dialog, /Columns not used: Email/);
   assert.match(dialog, /Photos, crops and the "Show in the video" choices are never touched/);
-  assert.equal(await page.$eval('dialog [data-action=import]', (b) => b.textContent), 'Import 6 players');
+  assert.equal(await page.$eval('dialog [data-action=import]', (b) => b.textContent), 'Add 7, update 1');
 
   await page.click('dialog [data-action=cancel]');
   await page.waitForFunction(() => !document.querySelector('dialog[open]'));
@@ -133,11 +146,13 @@ test('importing adds and updates, keeps photos, crops and toggles, and marks who
   await upload(fixture('sample-squad.csv'));
   await page.click('dialog [data-action=import]');
   await page.waitForFunction(() => !document.querySelector('dialog[open]'));
-  await page.waitForFunction(() => document.querySelectorAll('.player-card').length === 6);
-  assert.equal(await page.$eval('.toast:last-child', (t) => t.textContent), 'Added 5 players and updated 1. 5 still need photos (marked in gold).');
+  await page.waitForFunction(() => document.querySelectorAll('.player-card').length === 8);
+  assert.equal(await page.$eval('.toast:last-child', (t) => t.textContent), 'Added 7 players and updated 1. 7 still need photos (marked in gold).');
 
   const players = await stored();
-  assert.equal(players.length, 6);
+  assert.equal(players.length, 8);
+  const gary = players.find((p) => p.name === 'Goalie Gary');
+  assert.deepEqual([gary.positions, gary.heightCm], [[], 182.9], 'skipped cell left blank, the rest imported');
   const mateo = players.find((p) => p.id === mateoBefore.id);
   assert.equal(mateo.name, 'Mateo Alvarez');
   assert.equal(mateo.nickname, 'Tank');
@@ -153,21 +168,33 @@ test('importing adds and updates, keeps photos, crops and toggles, and marks who
     tag: c.querySelector('.needs-tag')?.textContent || null, marked: c.classList.contains('needs-photos'),
   }])));
   assert.deepEqual(cards['Mateo Alvarez'], { tag: null, marked: false });
-  for (const name of ['Christopher Rodriguez', 'Sione Taufa', 'Ryan Castillo', 'Ethan Hughes', "Liam O'Connor"]) {
+  for (const name of ['Christopher Rodriguez', 'Sione Taufa', 'Ryan Castillo', 'Ethan Hughes', "Liam O'Connor", 'Goalie Gary', 'Tall Tim']) {
     assert.deepEqual(cards[name], { tag: 'Needs photos', marked: true }, name);
   }
-  assert.match(await page.$eval('#squad-count', (e) => e.textContent), /6 players in the squad · 5 still need photos/);
+  assert.match(await page.$eval('#squad-count', (e) => e.textContent), /8 players in the squad · 7 still need photos/);
 });
 
 test('the same squad as .xlsx is already up to date (dates turned back into positions)', async () => {
   await upload(fixture('sample-squad.xlsx'));
   assert.equal(await section('add'), null);
-  assert.equal(await section('update'), null);
+  assert.equal(await section('update'), null, 'no phantom changes such as "195 lb → 195 lb"');
   const same = await section('unchanged');
-  assert.equal(same.title, 'Already up to date (6)');
+  assert.equal(same.title, 'Already up to date (8)');
   assert.match(same.text, /Ethan Hughes/);
-  assert.equal((await section('errors')).rows.length, 4);
+  // The skipped cells are still pointed out for the players they belong to.
+  assert.deepEqual(same.rows.map((r) => r[0]), ['Goalie Gary', 'Tall Tim']);
+  assert.equal((await section('errors')).rows.length, 2);
   assert.equal(await page.$('dialog [data-action=import]'), null, 'nothing to import, so no Import button');
+  await page.click('dialog [data-action=cancel]');
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+});
+
+test('the downloaded template, filled in, skips its example row and says so', async () => {
+  await upload(join(dir, 'filled-template.csv'));
+  assert.equal(await page.$eval('dialog [data-section=example]', (e) => e.textContent), "Row 2 is the template's example row, so it was skipped.");
+  assert.deepEqual((await section('add')).rows.map((r) => r[0]), ['Bo Kim']);
+  assert.equal(await section('errors'), null);
+  assert.equal(await page.$eval('dialog [data-action=import]', (b) => b.textContent), 'Add 1 player');
   await page.click('dialog [data-action=cancel]');
   await page.waitForFunction(() => !document.querySelector('dialog[open]'));
 });
@@ -177,7 +204,7 @@ test('a sheet with no Name column is refused with an explanation', async () => {
   assert.match(await page.$eval('dialog', (d) => d.textContent), /No Name column found.*Name, Nickname, Positions, Height, Weight, Years at SFV, Caps/s);
   await page.click('dialog [data-action=true]');
   await page.waitForFunction(() => !document.querySelector('dialog[open]'));
-  assert.equal((await stored()).length, 6);
+  assert.equal((await stored()).length, 8);
 });
 
 test('no native dialogs and no page errors', () => {

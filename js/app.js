@@ -12,7 +12,7 @@ import { backupSummary, createBackup, describeRestore, restoreBackup } from './b
 import { forgetPhoto, loadImage, photoImage, resizeImage } from './images.js';
 import { createPhotoPicker } from './cropeditor.js';
 import { readSheetFile, toCsv } from './sheet.js';
-import { FIELD_LABELS, missingPhotos, planImport, playersToSave, showValue, templateRows } from './squadimport.js';
+import { FIELD_LABELS, importActionLabel, missingPhotos, planImport, playersToSave, showValue, templateRows } from './squadimport.js';
 import { drawPhoto } from './photodraw.js';
 import { PHOTO_STYLES } from './photostyle.js';
 import { CROP_ASPECT } from './crop.js';
@@ -492,37 +492,61 @@ const table = (head, rows) => el('div', { class: 'table-wrap' }, el('table', {},
   el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))),
   el('tbody', {}, rows.map((r) => el('tr', {}, r.map((c) => el('td', {}, c)))))));
 
+/** A row's notes (how bare numbers were read) and warnings (cells left out), for the preview. */
+function rowNotes({ notes = [], warnings = [] }) {
+  if (!notes.length && !warnings.length) return '';
+  return el('div', { class: 'row-notes' },
+    warnings.map((w) => el('div', { class: 'warn' }, `⚠ ${w.text}`)),
+    notes.map((n) => el('div', { class: n.assumed ? 'note assumed' : 'note' }, n.assumed ? `Assumed: ${n.text}` : n.text)));
+}
+
 /** What the import will do, laid out for the confirm dialog. */
 function importPreview(plan, units) {
   const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   const sections = [];
   const total = plan.add.length + plan.update.length;
+  const entries = [...plan.add, ...plan.update, ...plan.unchanged];
+  const warned = entries.filter((e) => e.warnings.length).length;
+  const assumed = entries.reduce((n, e) => n + e.notes.filter((x) => x.assumed).length, 0);
+  const read = entries.reduce((n, e) => n + e.notes.length, 0);
   sections.push(el('p', { class: 'import-summary' }, total
-    ? `${plural(plan.add.length, 'new player')} and ${plural(plan.update.length, 'update')}. Nothing changes until you press Import.`
+    ? `${plural(plan.add.length, 'new player')} and ${plural(plan.update.length, 'update')}. Nothing changes until you press ${importActionLabel(plan)}.`
     : 'Nothing to import.'));
+  const checks = [
+    warned && `${plural(warned, 'row')} with a cell that couldn't be used: that cell is left out, the rest of the row is imported (⚠ below).`,
+    read && `${plural(read, 'number')} without a unit${assumed ? `, ${assumed} of them assumed from your "Show stats in" setting` : ''}: see the notes to check how each was read.`,
+  ].filter(Boolean);
+  if (checks.length) sections.push(el('ul', { class: 'import-checks' }, checks.map((c) => el('li', {}, c))));
   if (plan.add.length) {
     sections.push(el('section', { dataset: { section: 'add' } }, el('h3', {}, `New players (${plan.add.length})`),
-      table(['Name', 'Positions', 'Height', 'Weight', 'Years', 'Caps'], plan.add.map(({ player: p }) => [
-        p.name + (p.nickname ? ` “${p.nickname}”` : ''), showValue('positions', p.positions), showValue('heightCm', p.heightCm, units),
-        showValue('weightKg', p.weightKg, units), showValue('years', p.years), showValue('caps', p.caps)]))));
+      table(['Name', 'Positions', 'Height', 'Weight', 'Years', 'Caps', 'Notes'], plan.add.map((a) => {
+        const p = a.player;
+        return [p.name + (p.nickname ? ` “${p.nickname}”` : ''), showValue('positions', p.positions), showValue('heightCm', p.heightCm, units),
+          showValue('weightKg', p.weightKg, units), showValue('years', p.years), showValue('caps', p.caps), rowNotes(a)];
+      }))));
   }
   if (plan.update.length) {
     sections.push(el('section', { dataset: { section: 'update' } }, el('h3', {}, `Updates to players already in the squad (${plan.update.length})`),
-      table(['Name', 'Changes'], plan.update.map(({ before, changes }) => [before.name, el('div', {}, changes.map((c) => el('div', { class: 'change' },
-        `${FIELD_LABELS[c.field]}: `, el('span', { class: 'from' }, showValue(c.field, c.from, units)), ' → ', el('strong', {}, showValue(c.field, c.to, units)))))]))));
+      table(['Name', 'Changes', 'Notes'], plan.update.map((u) => [u.before.name, el('div', {}, u.changes.map((c) => el('div', { class: 'change' },
+        `${FIELD_LABELS[c.field]}: `, el('span', { class: 'from' }, showValue(c.field, c.from, units)), ' → ', el('strong', {}, showValue(c.field, c.to, units))))), rowNotes(u)]))));
   }
   if (plan.unchanged.length) {
+    const flagged = plan.unchanged.filter((u) => u.warnings.length);
     sections.push(el('section', { dataset: { section: 'unchanged' } }, el('h3', {}, `Already up to date (${plan.unchanged.length})`),
-      el('p', { class: 'hint' }, plan.unchanged.map((u) => u.player.name).join(', '))));
+      el('p', { class: 'hint' }, plan.unchanged.map((u) => u.player.name).join(', ')),
+      flagged.length ? table(['Name', 'Notes'], flagged.map((u) => [u.player.name, rowNotes(u)])) : null));
   }
   if (plan.errors.length) {
-    sections.push(el('section', { dataset: { section: 'errors' } }, el('h3', { class: 'bad' }, `Rows with problems, not imported (${plan.errors.length})`),
+    sections.push(el('section', { dataset: { section: 'errors' } }, el('h3', { class: 'bad' }, `Rows not imported (${plan.errors.length})`),
       table(['Row', 'Name', 'Why'], plan.errors.map((e) => [String(e.row), e.name || '—', e.reasons.join(' ')]))));
+  }
+  if (plan.exampleRows.length) {
+    sections.push(el('p', { class: 'hint', dataset: { section: 'example' } }, `Row ${plan.exampleRows.join(', ')} is the template's example row, so it was skipped.`));
   }
   if (plan.ignoredColumns.length) {
     sections.push(el('p', { class: 'hint' }, `Columns not used: ${plan.ignoredColumns.join(', ')}.`));
   }
-  sections.push(el('p', { class: 'hint' }, 'Updates only change the cells filled in the sheet. Photos, crops and the "Show in the video" choices are never touched.'));
+  sections.push(el('p', { class: 'hint' }, 'Updates only change the cells filled in the sheet that differ from the squad. Photos, crops and the "Show in the video" choices are never touched.'));
   return el('div', { class: 'import-preview' }, sections);
 }
 
@@ -545,7 +569,7 @@ async function importSheet(file) {
     body: importPreview(plan, units),
     className: 'modal-wide',
     actions: toSave.length
-      ? [{ label: 'Cancel', value: 'cancel' }, { label: `Import ${toSave.length} player${toSave.length === 1 ? '' : 's'}`, value: 'import', variant: 'primary' }]
+      ? [{ label: 'Cancel', value: 'cancel' }, { label: importActionLabel(plan), value: 'import', variant: 'primary' }]
       : [{ label: 'Close', value: 'cancel', variant: 'primary' }],
   });
   if (choice !== 'import') return;

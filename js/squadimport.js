@@ -3,7 +3,7 @@
 // Pure: no DOM, no storage. Rows come from sheet.js.
 
 import {
-  LIMITS, POSITIONS, formatHeight, formatWeight, ftInToCm, lbToKg, normalizePlayer, validatePlayer,
+  LIMITS, POSITIONS, formatHeight, formatWeight, ftInToCm, lbToKg, normalizePlayer,
 } from './model.js';
 
 export const TEMPLATE_COLUMNS = ['Name', 'Nickname', 'Positions', 'Height', 'Weight', 'Years at SFV', 'Caps'];
@@ -68,12 +68,14 @@ const tidy = (s) => String(s ?? '').trim()
   .replace(/\s+/g, ' ');
 
 /**
- * Height text -> { cm } or { error }. Accepts 6'1", 6' 1, 6 ft 1, 6ft 1in, 6', 6-1, 73 in, 185 cm,
- * 1.85 m, and a bare 185 (cm).
+ * Height text -> { cm, note? } or { error }. Accepts 6'1", 6' 1, 6 ft 1, 6ft 1in, 6', 6-1, 73 in,
+ * 185 cm and 1.85 m. A bare number is read in the only unit it makes sense in (185: cm, 73: inches,
+ * 6: feet, 1.85: metres), with a note saying so. hint: a unit from the column heading ('cm').
  */
-export function parseHeight(text) {
+export function parseHeight(text, hint = null) {
   const s = tidy(text).toLowerCase();
-  const unclear = { error: `Height "${tidy(text)}" isn't clear. Write it like 6'1", 6 ft 1 or 185 cm.` };
+  const typed = tidy(text);
+  const unclear = { error: `"${typed}" isn't clear. Write it like 6'1", 6 ft 1 or 185 cm.` };
   let m = /^(\d+(?:\.\d+)?) ?(?:'|ft\.?|feet|foot)(?: ?(\d+(?:\.\d+)?) ?(?:"|in\.?|inch|inches)?)?$/.exec(s);
   if (m) {
     const inches = m[2] === undefined ? 0 : Number(m[2]);
@@ -86,23 +88,49 @@ export function parseHeight(text) {
   if ((m = /^(\d+(?:\.\d+)?) ?(?:cm|cms|centimet(?:er|re)s?)$/.exec(s))) return { cm: round1(Number(m[1])) };
   if ((m = /^(\d(?:\.\d+)?) ?(?:m|metres?|meters?)$/.exec(s))) return { cm: round1(Number(m[1]) * 100) };
   const n = num(s);
-  if (n >= 100 && n <= 260) return { cm: round1(n) };
-  if (n >= 1 && n < 3 && s.includes('.')) return { cm: round1(n * 100) }; // 1.85: metres
-  return unclear;
+  if (!Number.isFinite(n)) return unclear;
+  if (hint === 'cm') return { cm: round1(n) };
+  const [lo, hi] = LIMITS.heightCm;
+  // The plausible ranges for cm, inches, metres and feet don't overlap, so a bare number only
+  // ever fits one of them.
+  if (n >= lo && n <= hi) return { cm: round1(n), note: `Height ${typed} read as cm (too tall to be inches).` };
+  if (n * 2.54 >= lo && n * 2.54 <= hi) {
+    const cm = round1(n * 2.54);
+    return { cm, note: `Height ${typed} read as inches (${formatHeight(cm)}); too short to be cm.` };
+  }
+  if (s.includes('.') && n * 100 >= lo && n * 100 <= hi) return { cm: round1(n * 100), note: `Height ${typed} read as metres.` };
+  if (Number.isInteger(n) && n >= 4 && n <= 7) return { cm: ftInToCm(n, 0), note: `Height ${typed} read as ${n}'0" (feet).` };
+  return { error: `${typed} isn't a likely height in cm, inches or feet. Write it like 6'1" or 185 cm.` };
 }
 
 /**
- * Weight text -> { kg } or { error }. Accepts 220 lb / lbs / pounds, 100 kg / kgs / kilos, and a
- * bare number, read as unit ('lb' or 'kg': the header's unit, else the "Show stats in" setting).
+ * Weight text -> { kg, note? } or { error }. Accepts 220 lb / lbs / pounds and 100 kg / kgs / kilos.
+ * A bare number is read in the only unit it's a likely weight in (76: kg, 282: lb), or, when it
+ * could be either, in `unit` (the "Show stats in" setting), always with a note. hint: a unit from
+ * the column heading ('lb' or 'kg'), which is taken as written.
  */
-export function parseWeight(text, unit = 'lb') {
+export function parseWeight(text, unit = 'lb', hint = null) {
   const s = tidy(text).toLowerCase();
+  const typed = tidy(text);
   let m = /^(\d+(?:\.\d+)?) ?(?:lb|lbs|lb\.|pounds?|#)$/.exec(s);
   if (m) return { kg: lbToKg(m[1]) };
   if ((m = /^(\d+(?:\.\d+)?) ?(?:kg|kgs|kilos?|kilograms?)$/.exec(s))) return { kg: round1(Number(m[1])) };
   const n = num(s);
-  if (Number.isFinite(n)) return { kg: unit === 'kg' ? round1(n) : lbToKg(n) };
-  return { error: `Weight "${tidy(text)}" isn't clear. Write it like 220 lb or 100 kg.` };
+  if (!Number.isFinite(n)) return { error: `"${typed}" isn't clear. Write it like 220 lb or 100 kg.` };
+  if (hint) return { kg: hint === 'kg' ? round1(n) : lbToKg(n) };
+  const [lo, hi] = LIMITS.weightKg;
+  const asKg = n >= lo && n <= hi;
+  const asLb = lbToKg(n) >= lo && lbToKg(n) <= hi;
+  if (asKg && asLb) {
+    return {
+      kg: unit === 'kg' ? round1(n) : lbToKg(n),
+      note: `Weight ${typed} read as ${unit} (from "Show stats in"). Write ${typed} ${unit === 'kg' ? 'lb' : 'kg'} if that's wrong.`,
+      assumed: true,
+    };
+  }
+  if (asKg) return { kg: round1(n), note: `Weight ${typed} read as kg (too light to be lb).` };
+  if (asLb) return { kg: lbToKg(n), note: `Weight ${typed} read as lb (too heavy to be kg).` };
+  return { error: `${typed} isn't a likely weight in lb or kg. Write it like 220 lb or 100 kg.` };
 }
 
 const POSITION_WORDS = {
@@ -162,11 +190,11 @@ export function undoDate(text) {
 }
 
 /** Whole-number cell (years, caps). "New" counts as 0 years. */
-function parseCount(text, label, key) {
+function parseCount(text) {
   const s = tidy(text).toLowerCase().replace(/\s*(years?|yrs?|caps?|seasons?)$/, '');
-  if (key === 'years' && s === 'new') return { value: 0 };
+  if (s === 'new') return { value: 0 };
   const n = num(s);
-  if (!Number.isInteger(n)) return { error: `${label} "${tidy(text)}" should be a whole number.` };
+  if (!Number.isInteger(n)) return { error: `"${tidy(text)}" should be a whole number.` };
   return { value: n };
 }
 
@@ -175,55 +203,82 @@ export const nameKey = (name) => String(name ?? '').normalize('NFC').trim().repl
 
 // ---------- plan ----------
 
+const RANGE_TEXT = {
+  heightCm: () => 'should be between 4\'0" and 7\'6" (120–230 cm)', // same limits and wording as the player form
+  weightKg: () => 'should be between 88 and 440 lb (40–200 kg)',
+  years: () => `should be 0 to ${LIMITS.years[1]}`,
+  caps: () => `should be 0 to ${LIMITS.caps[1]}`,
+};
+const inRange = (field, v) => v >= LIMITS[field][0] && v <= LIMITS[field][1];
+
 /**
- * One data row -> { name, fields: { field: value } (only cells that were filled), errors: [] }.
- * units: the "Show stats in" setting ('imperial' | 'metric'), used for bare weights.
+ * One data row -> { name, fields, notes, warnings }.
+ *   fields: { field: value } for the cells that were filled in and could be read.
+ *   notes: [{ field, text, assumed }] how a bare number was read (always shown, never silent).
+ *   warnings: [{ field, text }] a cell that couldn't be used, so it is left out of the import.
+ * units: the "Show stats in" setting ('imperial' | 'metric').
  */
 function readRow(row, { columns, hints }, units) {
   const cell = (field) => (field in columns ? tidy(row[columns[field]]) : '');
   const fields = {};
-  const errors = [];
+  const notes = [];
+  const warnings = [];
+  const skip = (field, why) => warnings.push({ field, text: `${FIELD_LABELS[field]} skipped: ${why}` });
+  const shown = (field, v) => showValue(field, v, units);
+
   let name = cell('name');
   if (!name && ('firstName' in columns || 'lastName' in columns)) name = [cell('firstName'), cell('lastName')].filter(Boolean).join(' ');
-  if (name) fields.name = name;
+  if (name.length > LIMITS.name) {
+    name = name.slice(0, LIMITS.name).trim();
+    warnings.push({ field: 'name', text: `Name shortened to ${LIMITS.name} characters.` });
+  }
 
-  if (cell('nickname')) fields.nickname = cell('nickname');
+  if (cell('nickname')) {
+    if (cell('nickname').length > LIMITS.nickname) skip('nickname', `longer than ${LIMITS.nickname} characters.`);
+    else fields.nickname = cell('nickname');
+  }
   if (cell('positions')) {
     const { positions, unknown } = parsePositions(undoDate(cell('positions')));
-    if (unknown.length) errors.push(`Unknown position${unknown.length === 1 ? '' : 's'}: ${unknown.map((u) => `"${u}"`).join(', ')}. Use ${POSITIONS.join(', ')}.`);
-    else fields.positions = positions;
+    const list = unknown.map((u) => `"${u}"`).join(', ');
+    if (!positions.length) skip('positions', `${list} not recognised. Use ${POSITIONS.join(', ')}.`);
+    else {
+      fields.positions = positions;
+      if (unknown.length) warnings.push({ field: 'positions', text: `Positions: ${list} not recognised, so left out. Use ${POSITIONS.join(', ')}.` });
+    }
   }
+  const measure = (field, parsed, value) => {
+    if (parsed.error) return skip(field, parsed.error);
+    if (!inRange(field, value)) return skip(field, `${shown(field, value)} ${RANGE_TEXT[field]()}.`);
+    fields[field] = value;
+    if (parsed.note) notes.push({ field, text: parsed.note, assumed: !!parsed.assumed });
+  };
   if (cell('heightCm')) {
-    const h = hints.heightCm === 'cm' && num(cell('heightCm')) > 0 ? { cm: num(cell('heightCm')) } : parseHeight(cell('heightCm'));
-    if (h.error) errors.push(h.error); else fields.heightCm = h.cm;
+    const h = parseHeight(cell('heightCm'), hints.heightCm);
+    measure('heightCm', h, h.cm);
   }
   if (cell('weightKg')) {
-    const w = parseWeight(cell('weightKg'), hints.weightKg || (units === 'metric' ? 'kg' : 'lb'));
-    if (w.error) errors.push(w.error); else fields.weightKg = w.kg;
+    const w = parseWeight(cell('weightKg'), units === 'metric' ? 'kg' : 'lb', hints.weightKg);
+    measure('weightKg', w, w.kg);
   }
-  for (const [key, label] of [['years', 'Years at SFV'], ['caps', 'Caps']]) {
+  for (const key of ['years', 'caps']) {
     if (!cell(key)) continue;
-    const c = parseCount(cell(key), label, key);
-    if (c.error) errors.push(c.error); else fields[key] = c.value;
+    const c = parseCount(cell(key));
+    if (c.error) skip(key, c.error);
+    else if (!inRange(key, c.value)) skip(key, `${c.value} ${RANGE_TEXT[key]()}.`);
+    else fields[key] = c.value;
   }
-  return { name, fields, errors };
+  return { name, fields, notes, warnings };
 }
 
-/** Range problems, worded with what was typed and in the units the coach uses. */
-function rangeErrors(player, fields, units) {
-  const errs = validatePlayer(player);
-  const out = [];
-  if (errs.name && fields.name) out.push(`Name is longer than ${LIMITS.name} characters.`);
-  if (errs.nickname) out.push(`Nickname is longer than ${LIMITS.nickname} characters.`);
-  // Same limits and wording as the player form.
-  if (errs.heightCm && 'heightCm' in fields) out.push(`Height ${formatHeight(fields.heightCm, units)} should be between 4'0" and 7'6" (120–230 cm).`);
-  if (errs.weightKg && 'weightKg' in fields) out.push(`Weight ${formatWeight(fields.weightKg, units)} should be between 88 and 440 lb (40–200 kg).`);
-  if (errs.years && 'years' in fields) out.push(`Years at SFV must be 0 to ${LIMITS.years[1]}.`);
-  if (errs.caps && 'caps' in fields) out.push(`Caps must be 0 to ${LIMITS.caps[1]}.`);
-  return out;
+/**
+ * Whether a sheet value and a squad value would look the same to the coach: heights and weights
+ * as displayed (282 lb is 282 lb, whether stored as 127.9 or 128 kg), positions in any order.
+ */
+export function sameShown(field, a, b, units = 'imperial') {
+  if (field === 'positions') return [...(a || [])].sort().join('|') === [...(b || [])].sort().join('|');
+  if (field === 'nickname') return String(a ?? '').trim() === String(b ?? '').trim();
+  return showValue(field, a, units) === showValue(field, b, units);
 }
-
-const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 /** A field's value as the coach reads it, for the preview. */
 export function showValue(field, value, units = 'imperial') {
@@ -235,21 +290,27 @@ export function showValue(field, value, units = 'imperial') {
   return String(value);
 }
 
+/** The template's example row is marked so it is never imported. */
+export const EXAMPLE_NAME = 'EXAMPLE (skipped on import)';
+const isExample = (name) => /^example\b/i.test(name.trim());
+
 /**
  * Work out what an import would do, without changing anything.
  * rows: from parseCsv / readXlsx. players: the current squad. units: the "Show stats in" setting.
  * Returns {
  *   error,                       // a problem with the whole sheet (no Name column, no rows)
  *   ignoredColumns: [header],
- *   add: [{ row, player }],
- *   update: [{ row, before, player, changes: [{ field, from, to }] }],
- *   unchanged: [{ row, player }],
- *   errors: [{ row, name, reasons: [] }],
+ *   exampleRows: [row],          // the template's example row, skipped
+ *   add: [{ row, player, notes, warnings }],
+ *   update: [{ row, before, player, changes: [{ field, from, to }], notes, warnings }],
+ *   unchanged: [{ row, player, notes, warnings }],
+ *   errors: [{ row, name, reasons: [] }],   // rows not imported at all
  * }
- * Row numbers are the sheet's own (1 = first row).
+ * A cell that can't be used is left out with a warning; only a row with no name (or one that
+ * can't be told apart from another) is not imported. Row numbers are the sheet's own (1 = first).
  */
 export function planImport(rows, players = [], { units = 'imperial' } = {}) {
-  const plan = { error: null, ignoredColumns: [], add: [], update: [], unchanged: [], errors: [] };
+  const plan = { error: null, ignoredColumns: [], exampleRows: [], add: [], update: [], unchanged: [], errors: [] };
   const headerAt = rows.findIndex((r) => r.some((c) => String(c ?? '').trim()));
   if (headerAt < 0) return { ...plan, error: 'The sheet is empty.' };
   const cols = matchColumns(rows[headerAt]);
@@ -264,43 +325,53 @@ export function planImport(rows, players = [], { units = 'imperial' } = {}) {
     squadByName.set(k, [...(squadByName.get(k) || []), p]);
   }
   const seen = new Map(); // name key -> first row number
+  const now = () => new Date().toISOString();
 
   for (let i = headerAt + 1; i < rows.length; i++) {
     const row = rows[i] || [];
     if (!row.some((c) => String(c ?? '').trim())) continue; // blank line
     const rowNo = i + 1;
-    const { name, fields, errors } = readRow(row, cols, units);
+    const { name, fields, notes, warnings } = readRow(row, cols, units);
     const fail = (reasons) => plan.errors.push({ row: rowNo, name, reasons });
-    if (!name) { fail(['No name.', ...errors]); continue; }
+    if (!name) { fail(['No name, so there is no one to add or update.']); continue; }
+    if (isExample(name)) { plan.exampleRows.push(rowNo); continue; }
     const key = nameKey(name);
+    // Importing these would add or change the same player twice, or guess which one is meant.
     if (seen.has(key)) { fail([`Same name as row ${seen.get(key)}.`]); continue; }
     seen.set(key, rowNo);
-    if (errors.length) { fail(errors); continue; }
-
     const matches = squadByName.get(key) || [];
     if (matches.length > 1) { fail([`${matches.length} players in the squad are called ${matches[0].name}. Rename one first.`]); continue; }
+
     const existing = matches[0];
     if (!existing) {
-      const player = normalizePlayer({ ...fields, name, updatedAt: new Date().toISOString() });
-      const bad = rangeErrors(player, fields, units);
-      if (bad.length) fail(bad); else plan.add.push({ row: rowNo, player });
+      plan.add.push({ row: rowNo, player: normalizePlayer({ ...fields, name, updatedAt: now() }), notes, warnings });
       continue;
     }
-    // Existing player: only the cells filled in, and never the name's spelling, photos,
-    // crops or which stats show.
-    delete fields.name;
-    const player = { ...existing, ...fields };
-    const bad = rangeErrors(player, fields, units);
-    if (bad.length) { fail(bad); continue; }
-    const changes = Object.keys(fields).filter((f) => !sameValue(existing[f], fields[f]))
+    // Existing player: only cells that were filled in and look different, and never the name's
+    // spelling, photos, crops or which stats show.
+    const changes = Object.keys(fields).filter((f) => !sameShown(f, existing[f], fields[f], units))
       .map((field) => ({ field, from: existing[field], to: fields[field] }));
-    if (!changes.length) plan.unchanged.push({ row: rowNo, player: existing });
-    else plan.update.push({ row: rowNo, before: existing, player: { ...player, updatedAt: new Date().toISOString() }, changes });
+    const changed = new Set(changes.map((c) => c.field));
+    const used = notes.filter((n) => changed.has(n.field));
+    if (!changes.length) { plan.unchanged.push({ row: rowNo, player: existing, notes: used, warnings }); continue; }
+    const player = { ...existing, ...Object.fromEntries(changes.map((c) => [c.field, c.to])), updatedAt: now() };
+    plan.update.push({ row: rowNo, before: existing, player, changes, notes: used, warnings });
   }
   if (!plan.add.length && !plan.update.length && !plan.unchanged.length && !plan.errors.length) {
-    plan.error = 'No players found under the heading row.';
+    plan.error = plan.exampleRows.length ? 'Only the example row was found. Add your players under it, or replace it.' : 'No players found under the heading row.';
   }
   return plan;
+}
+
+/** What pressing the confirm button will do: "Add 2, update 3", "Add 5 players", "Update 1 player". */
+export function importActionLabel(plan) {
+  const a = plan.add.length;
+  const u = plan.update.length;
+  const players = (n) => `${n} player${n === 1 ? '' : 's'}`;
+  if (a && u) return `Add ${a}, update ${u}`;
+  if (a) return `Add ${players(a)}`;
+  if (u) return `Update ${players(u)}`;
+  return '';
 }
 
 /** Players to save for a plan: the new ones and the updated ones. */
@@ -311,5 +382,8 @@ export function missingPhotos(p) {
   return [!p.photos?.serious && 'Serious', !p.photos?.fun && 'Fun'].filter(Boolean);
 }
 
-/** The template's heading row, plus nothing else, ready for toCsv. */
-export const templateRows = () => [TEMPLATE_COLUMNS];
+/** The template: the headings and one example row (skipped on import) showing the formats. */
+export const templateRows = () => [
+  TEMPLATE_COLUMNS,
+  [EXAMPLE_NAME, 'Tank', 'Prop, Hooker or 1/2', '6\'1" or 185 cm', '220 lb or 100 kg', '3', '25'],
+];
