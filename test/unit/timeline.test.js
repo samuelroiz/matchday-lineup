@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SPEEDS, VIDEO_TEMPLATE, buildTimeline, cardLook, cardRects, cardState, segmentAt, titleState } from '../../js/timeline.js';
 import { ALL_SLOTS, normalizeMatch } from '../../js/model.js';
-import { pickVideoFormat } from '../../js/video.js';
+import { VIDEO_QUALITIES, pickVideoFormat } from '../../js/video.js';
 
 const fullSelection = Object.fromEntries(ALL_SLOTS.map((s) => [s, `p${s}`]));
 const EPS = 1e-9;
@@ -140,6 +140,21 @@ test('video format prefers MP4 and falls back to WebM', () => {
   const webm = pickVideoFormat((t) => t.startsWith('video/webm'));
   assert.deepEqual([webm.ext, webm.type], ['webm', 'video/webm']);
   assert.equal(pickVideoFormat(() => false), null);
+});
+
+test('High profile MP4 is preferred where the browser records it', () => {
+  assert.equal(pickVideoFormat(() => true).mimeType, 'video/mp4;codecs=avc1.640028');
+  assert.equal(pickVideoFormat((t) => t !== 'video/mp4;codecs=avc1.640028').mimeType, 'video/mp4;codecs=avc1.42E01F');
+});
+
+test('Standard quality keeps the longest possible video under 20 MB', () => {
+  const slowest = Math.min(...SPEEDS.map((s) => s.value));
+  const coaches = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
+  const { duration } = buildTimeline(VIDEO_TEMPLATE, { speed: slowest, selection: fullSelection, coaches });
+  // 10% for the recorder overshooting its target and the MP4 container.
+  const bytes = (VIDEO_QUALITIES.standard.videoBitsPerSecond / 8) * duration * 1.1;
+  assert.ok(bytes < 20 * 1024 * 1024, `${(bytes / 1024 / 1024).toFixed(1)} MB for ${duration.toFixed(1)} s`);
+  assert.ok(VIDEO_QUALITIES.high.videoBitsPerSecond > VIDEO_QUALITIES.standard.videoBitsPerSecond);
 });
 
 const COACHES = ['c1', 'c2', 'c3'];

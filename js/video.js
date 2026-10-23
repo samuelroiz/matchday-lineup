@@ -321,7 +321,16 @@ export function createPreviewPlayer(canvas, renderer, timeline, { onTime, onEnd 
   return player;
 }
 
+// Recording bitrate. Standard keeps the longest video (Relaxed speed, full squad, six coaches) under
+// 20 MB and, in High profile H.264, looks the same as High on a phone.
+export const VIDEO_QUALITIES = {
+  standard: { label: 'Standard', videoBitsPerSecond: 2_200_000 },
+  high: { label: 'High', videoBitsPerSecond: 8_000_000 },
+};
+
 const FORMATS = [
+  // High profile, level 4.0: at Standard's bitrate, Baseline smears the background after each slide.
+  'video/mp4;codecs=avc1.640028',
   'video/mp4;codecs=avc1.42E01F',
   'video/mp4;codecs=avc1',
   'video/mp4',
@@ -366,7 +375,7 @@ function createTicker(ms, fn) {
  * Record the timeline in real time from `canvas`. Resolves { blob, type, ext }.
  * Rejects with an AbortError if `signal` is aborted.
  */
-export async function recordVideo(canvas, renderer, timeline, { onProgress, signal, limitSeconds } = {}) {
+export async function recordVideo(canvas, renderer, timeline, { onProgress, signal, limitSeconds, quality = 'standard' } = {}) {
   const fmt = pickVideoFormat();
   if (!fmt || typeof canvas.captureStream !== 'function') {
     throw new Error('This browser cannot record video. Try a recent Chrome, Edge, Safari or Firefox.');
@@ -376,7 +385,7 @@ export async function recordVideo(canvas, renderer, timeline, { onProgress, sign
   renderer.draw(ctx, 0);
 
   const stream = canvas.captureStream(timeline.fps);
-  const recorder = new MediaRecorder(stream, { mimeType: fmt.mimeType, videoBitsPerSecond: 8_000_000 });
+  const recorder = new MediaRecorder(stream, { mimeType: fmt.mimeType, videoBitsPerSecond: (VIDEO_QUALITIES[quality] || VIDEO_QUALITIES.standard).videoBitsPerSecond });
   const chunks = [];
   recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
   const stopped = new Promise((resolve) => { recorder.onstop = resolve; });

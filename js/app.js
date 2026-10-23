@@ -19,12 +19,12 @@ import { CROP_ASPECT } from './crop.js';
 import { confirmDialog, el, openDialog, toast } from './dialog.js';
 import { layoutTeamSheet, drawTeamSheet } from './teamsheet.js';
 import { SPEEDS, VIDEO_TEMPLATE, buildTimeline } from './timeline.js';
-import { createPreviewPlayer, createVideoRenderer, recordVideo } from './video.js';
+import { VIDEO_QUALITIES, createPreviewPlayer, createVideoRenderer, recordVideo } from './video.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-const DEFAULT_SETTINGS = { id: 'settings', units: 'imperial', photoStyle: 'auto', activeMatchId: null, speed: 1, transition: 'flip', sheetSize: 'post' };
+const DEFAULT_SETTINGS = { id: 'settings', units: 'imperial', photoStyle: 'auto', activeMatchId: null, speed: 1, transition: 'flip', videoQuality: 'standard', sheetSize: 'post' };
 // ?clip=5 exports only the first 5 seconds of the video (handy for a quick test).
 const CLIP_SECONDS = Math.max(0, Number(new URLSearchParams(location.search).get('clip')) || 0);
 
@@ -1107,7 +1107,7 @@ function togglePreview() {
 
 function setExportingUi(on) {
   $('#video-progress').hidden = !on;
-  for (const id of ['#video-export', '#video-play', '#video-scrub', '#video-speed', '#video-transition']) $(id).disabled = on;
+  for (const id of ['#video-export', '#video-play', '#video-scrub', '#video-speed', '#video-transition', '#video-quality']) $(id).disabled = on;
 }
 
 async function exportVideo() {
@@ -1127,6 +1127,7 @@ async function exportVideo() {
     const result = await recordVideo($('#video-canvas'), v.renderer, v.timeline, {
       signal: ctrl.signal,
       limitSeconds: CLIP_SECONDS,
+      quality: state.settings.videoQuality,
       onProgress: (p) => { bar.value = p; label.textContent = `${Math.round(p * 100)}%`; },
     });
     const filename = `${matchFileBase(m)}-lineup.${result.ext}`;
@@ -1192,6 +1193,9 @@ function bindVideo() {
   const tr = $('#video-transition');
   tr.value = state.settings.transition;
   tr.addEventListener('change', async () => { state.settings.transition = tr.value; await saveSettings(); prepareVideo(); });
+  const quality = $('#video-quality');
+  quality.value = VIDEO_QUALITIES[state.settings.videoQuality] ? state.settings.videoQuality : 'standard';
+  quality.addEventListener('change', async () => { state.settings.videoQuality = quality.value; await saveSettings(); });
   $('#video-play').addEventListener('click', togglePreview);
   $('#video-scrub').addEventListener('input', (e) => {
     const v = state.video;

@@ -186,6 +186,15 @@
               </select>
             </label>
           </div>
+          <div class="field-row">
+            <label class="field">Quality
+              <select id="video-quality" aria-describedby="video-quality-help">
+                <option value="standard">Standard</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint" id="video-quality-help"><strong>Standard</strong> looks the same on a phone and keeps a full video under 20 MB. <strong>High</strong> makes a file 3–4 times bigger.</p>
           <p class="hint" id="video-length"></p>
           <button type="button" class="btn btn-primary btn-wide" id="video-export">Export video</button>
           <div id="video-progress" class="progress-wrap" hidden>
